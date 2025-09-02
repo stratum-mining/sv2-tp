@@ -116,7 +116,7 @@ BOOST_AUTO_TEST_CASE(client_tests)
     tester.receiveMessage(request_transaction_data_msg);
     BOOST_TEST_MESSAGE("Receive RequestTransactionData.Success");
     // RequestTransactionData.Success on-wire size derived from constants and actual tx size
-    constexpr size_t SV2_RTD_SUCCESS_PREFIX = 8 /*template_id*/ + 2 /*excess len*/ + 2 /*tx_count=1*/;
+    constexpr size_t SV2_RTD_SUCCESS_PREFIX = 8 /*template_id*/ + 2 + 32 /*excess data*/ + 2 /*tx_count=1*/;
     constexpr size_t SV2_U24_LEN = 3; // u24 length per tx
     {
         // Serialize the same deterministic dummy transaction to get exact size

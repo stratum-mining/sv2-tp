@@ -28,6 +28,7 @@ MockBlockTemplate::MockBlockTemplate(std::shared_ptr<MockState> st, uint256 prev
     cb.vin.resize(1);
     cb.vin[0].prevout.SetNull();
     cb.vin[0].scriptSig = CScript() << OP_0;
+    cb.vin[0].scriptWitness.stack.emplace_back(32, 0);
 
     cb.vout.resize(3);
     // Output 0: Dummy anyone-can-spend output with full reward (will be filtered out by sv2-tp)

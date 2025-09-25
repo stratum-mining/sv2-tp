@@ -7,7 +7,7 @@
 
 #include <consensus/amount.h>
 #include <interfaces/types.h>
-#include <node/types.h>
+#include <sv2/block_options.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <uint256.h>
@@ -17,10 +17,6 @@
 #include <memory>
 #include <optional>
 #include <vector>
-
-namespace node {
-struct NodeContext;
-} // namespace node
 
 class BlockValidationState;
 class CScript;
@@ -128,14 +124,7 @@ public:
      * For signets the challenge verification is skipped when check_pow is false.
      */
     virtual bool checkBlock(const CBlock& block, const node::BlockCheckOptions& options, std::string& reason, std::string& debug) = 0;
-
-    //! Get internal node context. Useful for RPC and testing,
-    //! but not accessible across processes.
-    virtual node::NodeContext* context() { return nullptr; }
 };
-
-//! Return implementation of Mining interface.
-std::unique_ptr<Mining> MakeMining(node::NodeContext& node);
 
 } // namespace interfaces
 

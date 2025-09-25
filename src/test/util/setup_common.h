@@ -6,8 +6,8 @@
 #define BITCOIN_TEST_UTIL_SETUP_COMMON_H
 
 #include <common/args.h> // IWYU pragma: export
-#include <kernel/caches.h>
-#include <kernel/context.h>
+#include <node/kernel_cache_sizes.h>
+#include <node/kernel_context.h>
 #include <node/caches.h>
 #include <node/context.h> // IWYU pragma: export
 #include <optional>

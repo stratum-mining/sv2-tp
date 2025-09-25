@@ -7,7 +7,6 @@
 #include <net.h>
 #include <netaddress.h>
 #include <netmessagemaker.h>
-#include <node/connection_types.h>
 #include <random.h>
 #include <serialize.h>
 #include <span.h>

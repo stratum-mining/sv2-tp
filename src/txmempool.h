@@ -9,11 +9,11 @@
 #include <coins.h>
 #include <consensus/amount.h>
 #include <indirectmap.h>
-#include <kernel/cs_main.h>
-#include <kernel/mempool_entry.h>          // IWYU pragma: export
-#include <kernel/mempool_limits.h>         // IWYU pragma: export
-#include <kernel/mempool_options.h>        // IWYU pragma: export
-#include <kernel/mempool_removal_reason.h> // IWYU pragma: export
+#include <validation/cs_main.h>
+#include <mempool/entry.h>          // IWYU pragma: export
+#include <mempool/limits.h>         // IWYU pragma: export
+#include <mempool/options.h>        // IWYU pragma: export
+#include <mempool/removal_reason.h> // IWYU pragma: export
 #include <policy/feerate.h>
 #include <policy/packages.h>
 #include <primitives/transaction.h>

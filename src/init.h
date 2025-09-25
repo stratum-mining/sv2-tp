@@ -1,59 +1,10 @@
-// Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2022 The Bitcoin Core developers
-// Distributed under the MIT software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Placeholder header retained for compatibility with upstream include paths.
+// The SV2 Template Provider no longer exposes node initialization helpers.
 
 #ifndef BITCOIN_INIT_H
 #define BITCOIN_INIT_H
 
-#include <atomic>
-
-//! Default value for -daemon option
-static constexpr bool DEFAULT_DAEMON = false;
-
-class ArgsManager;
-namespace kernel {
-struct Context;
-}
-namespace node {
-struct NodeContext;
-} // namespace node
-
-/** Initialize node context shutdown and args variables. */
-void InitContext(node::NodeContext& node);
-/** Return whether node shutdown was requested. */
-bool ShutdownRequested(node::NodeContext& node);
-
-/** Interrupt threads */
-void Interrupt(node::NodeContext& node);
-void Shutdown(node::NodeContext& node);
-//!Initialize the logging infrastructure
-void InitLogging(const ArgsManager& args);
-//!Parameter interaction: change current parameters depending on various rules
-void InitParameterInteraction(ArgsManager& args);
-
-/** Initialize bitcoin core: Basic context setup.
- *  @note This can be done before daemonization. Do not call Shutdown() if this function fails.
- *  @pre Parameters should be parsed and config file should be read.
- */
-bool AppInitBasicSetup(const ArgsManager& args, std::atomic<int>& exit_status);
-/**
- * Initialization: parameter interaction.
- * @note This can be done before daemonization. Do not call Shutdown() if this function fails.
- * @pre Parameters should be parsed and config file should be read, AppInitBasicSetup should have been called.
- */
-bool AppInitParameterInteraction(const ArgsManager& args);
-/**
- * Initialization sanity checks.
- * @note This can be done before daemonization. Do not call Shutdown() if this function fails.
- * @pre Parameters should be parsed and config file should be read, AppInitParameterInteraction should have been called.
- */
-bool AppInitSanityChecks(const kernel::Context& kernel);
-/**
- * Lock bitcoin core critical directories.
- * @note This should only be done after daemonization. Do not call Shutdown() if this function fails.
- * @pre Parameters should be parsed and config file should be read, AppInitSanityChecks should have been called.
- */
+#endif // BITCOIN_INIT_H
 bool AppInitLockDirectories();
 /**
 /**

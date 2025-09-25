@@ -6,8 +6,8 @@
 #ifndef BITCOIN_VALIDATIONINTERFACE_H
 #define BITCOIN_VALIDATIONINTERFACE_H
 
-#include <kernel/chain.h>
-#include <kernel/cs_main.h>
+#include <validation/chain.h>
+#include <validation/cs_main.h>
 #include <primitives/transaction.h>
 #include <sync.h>
 

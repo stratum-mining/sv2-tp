@@ -8,7 +8,7 @@
 
 #include <coins.h>
 #include <dbwrapper.h>
-#include <kernel/cs_main.h>
+#include <validation/cs_main.h>
 #include <sync.h>
 #include <util/fs.h>
 

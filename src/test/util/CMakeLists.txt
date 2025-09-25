@@ -6,8 +6,6 @@ add_library(test_util STATIC EXCLUDE_FROM_ALL
   coverage.cpp
   net.cpp
   random.cpp
-  script.cpp
-  transaction_utils.cpp
 )
 
 target_link_libraries(test_util

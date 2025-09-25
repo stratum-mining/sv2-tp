@@ -64,7 +64,6 @@ public:
     std::optional<interfaces::BlockRef> waitTipChanged(uint256, MillisecondsDouble) override;
     std::unique_ptr<interfaces::BlockTemplate> createNewBlock(const node::BlockCreateOptions&) override;
     bool checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) override;
-    node::NodeContext* context() override;
 
     // Test control helpers
     void TriggerFeeIncrease(std::vector<CTransactionRef> txs);

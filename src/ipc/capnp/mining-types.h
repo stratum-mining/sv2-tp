@@ -9,8 +9,7 @@
 #include <ipc/capnp/common.capnp.proxy-types.h>
 #include <ipc/capnp/common-types.h>
 #include <ipc/capnp/mining.capnp.proxy.h>
-#include <node/miner.h>
-#include <node/types.h>
+#include <sv2/block_options.h>
 
 namespace mp {
 // Custom serializations

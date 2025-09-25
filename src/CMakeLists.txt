@@ -61,7 +61,6 @@ add_subdirectory(sv2)
 # Home for common functionality shared by different executables and libraries.
 # Similar to `bitcoin_util` library, but higher-level.
 add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
-  addresstype.cpp
   base58.cpp
   bech32.cpp
   arith_uint256.cpp
@@ -75,18 +74,14 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   hash.cpp
   deploymentinfo.cpp
   init/common.cpp
-  kernel/chainparams.cpp
   key.cpp
   pubkey.cpp
-  key_io.cpp
   primitives/block.cpp
   primitives/transaction.cpp
   net_types.cpp
   netaddress.cpp
   netbase.cpp
   common/sockman.cpp
-  outputtype.cpp
-  policy/feerate.cpp
   uint256.cpp
 )
 target_link_libraries(bitcoin_common

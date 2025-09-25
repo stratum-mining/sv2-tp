@@ -12,12 +12,9 @@
 #include <consensus/amount.h>
 #include <crypto/siphash.h>
 #include <hash.h>
-#include <kernel/messagestartchars.h>
+#include <message_start_chars.h>
 #include <netaddress.h>
 #include <netbase.h>
-#include <node/connection_types.h>
-#include <node/protocol_version.h>
-#include <policy/feerate.h>
 #include <random.h>
 #include <semaphore_grant.h>
 #include <span.h>

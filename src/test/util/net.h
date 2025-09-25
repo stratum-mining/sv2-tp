@@ -9,7 +9,6 @@
 #include <netmessagemaker.h>
 #include <net.h>
 #include <netaddress.h>
-#include <node/connection_types.h>
 #include <span.h>
 #include <sync.h>
 #include <util/sock.h>
@@ -28,15 +27,6 @@
 #include <vector>
 
 class FastRandomContext;
-
-constexpr ConnectionType ALL_CONNECTION_TYPES[]{
-    ConnectionType::INBOUND,
-    ConnectionType::OUTBOUND_FULL_RELAY,
-    ConnectionType::MANUAL,
-    ConnectionType::FEELER,
-    ConnectionType::BLOCK_RELAY,
-    ConnectionType::ADDR_FETCH,
-};
 
 constexpr auto ALL_NETWORKS = std::array{
     Network::NET_UNROUTABLE,

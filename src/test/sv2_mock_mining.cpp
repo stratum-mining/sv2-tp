@@ -84,7 +84,6 @@ std::unique_ptr<interfaces::BlockTemplate> MockMining::createNewBlock(const node
     return std::make_unique<MockBlockTemplate>(state, state->prev_hash, state->txs);
 }
 bool MockMining::checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) { return true; }
-node::NodeContext* MockMining::context() { return nullptr; }
 
 void MockMining::TriggerFeeIncrease(std::vector<CTransactionRef> txs)
 {

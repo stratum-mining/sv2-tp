@@ -9,7 +9,7 @@
 #include <arith_uint256.h>
 #include <consensus/params.h>
 #include <flatfile.h>
-#include <kernel/cs_main.h>
+#include <validation/cs_main.h>
 #include <primitives/block.h>
 #include <serialize.h>
 #include <sync.h>

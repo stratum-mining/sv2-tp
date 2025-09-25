@@ -1,4 +1,3 @@
-#include <addresstype.h>
 #include <boost/test/unit_test.hpp>
 #include <interfaces/mining.h>
 #include <interfaces/init.h>

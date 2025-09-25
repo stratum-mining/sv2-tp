@@ -8,7 +8,6 @@
 #include <span.h>
 #include <test/fuzz/FuzzedDataProvider.h>
 #include <test/fuzz/fuzz.h>
-#include <test/fuzz/util.h>
 #include <test/sv2_test_setup.h>
 #include <functional>
 #include <string_view>

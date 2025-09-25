@@ -6,23 +6,17 @@ set -Eeuo pipefail
 # Declare paths to libraries
 declare -A LIBS
 LIBS[common]="libbitcoin_common.a"
-LIBS[consensus]="libbitcoin_consensus.a"
 LIBS[crypto]="libbitcoin_crypto.a"
 
 # Declare allowed dependencies "X Y" where X is allowed to depend on Y. This
 # list is taken from doc/design/libraries.md.
 ALLOWED_DEPENDENCIES=(
-    "common consensus"
     "common crypto"
-    "common util"
-    "consensus crypto"
 )
 
 # Add minor dependencies omitted from doc/design/libraries.md to keep the
 # dependency diagram simple.
-ALLOWED_DEPENDENCIES+=(
-    "wallet consensus"
-)
+# No additional allowances in this trimmed repo.
 
 # Declare list of known errors that should be suppressed.
 declare -A SUPPRESS

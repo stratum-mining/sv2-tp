@@ -12,7 +12,6 @@
 #include <consensus/amount.h>
 #include <consensus/consensus.h>
 #include <key.h>
-#include <merkleblock.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <serialize.h>
@@ -61,11 +60,6 @@ template<typename B = uint8_t>
     std::vector<B> ret(s.size());
     std::copy(s.begin(), s.end(), reinterpret_cast<char*>(ret.data()));
     return ret;
-}
-
-[[nodiscard]] inline std::vector<bool> ConsumeRandomLengthBitVector(FuzzedDataProvider& fuzzed_data_provider, const std::optional<size_t>& max_length = std::nullopt) noexcept
-{
-    return BytesToBits(ConsumeRandomLengthByteVector(fuzzed_data_provider, max_length));
 }
 
 [[nodiscard]] inline DataStream ConsumeDataStream(FuzzedDataProvider& fuzzed_data_provider, const std::optional<size_t>& max_length = std::nullopt) noexcept

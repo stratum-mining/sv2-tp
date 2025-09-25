@@ -56,25 +56,7 @@ add_subdirectory(util)
 add_subdirectory(ipc)
 add_subdirectory(sv2)
 
-add_library(bitcoin_consensus STATIC EXCLUDE_FROM_ALL
-  arith_uint256.cpp
-  consensus/merkle.cpp
-  consensus/tx_check.cpp
-  hash.cpp
-  primitives/block.cpp
-  primitives/transaction.cpp
-  pubkey.cpp
-  script/interpreter.cpp
-  script/script.cpp
-  script/script_error.cpp
-  uint256.cpp
-)
-target_link_libraries(bitcoin_consensus
-  PRIVATE
-    core_interface
-    bitcoin_crypto
-    secp256k1
-)
+## bitcoin_consensus library is not needed for sv2-tp; omit it entirely.
 
 # Home for common functionality shared by different executables and libraries.
 # Similar to `bitcoin_util` library, but higher-level.
@@ -82,49 +64,34 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   addresstype.cpp
   base58.cpp
   bech32.cpp
-  chain.cpp
+  arith_uint256.cpp
+  consensus/merkle.cpp
   chainparams.cpp
   chainparamsbase.cpp
-  coins.cpp
   common/args.cpp
-  common/bloom.cpp
   common/config.cpp
-  common/init.cpp
-  common/interfaces.cpp
-  common/messages.cpp
-  common/netif.cpp
   common/settings.cpp
-  common/sockman.cpp
   common/system.cpp
-  compressor.cpp
-  core_read.cpp
-  core_write.cpp
+  hash.cpp
   deploymentinfo.cpp
   init/common.cpp
   kernel/chainparams.cpp
   key.cpp
+  pubkey.cpp
   key_io.cpp
-  merkleblock.cpp
-  musig.cpp
+  primitives/block.cpp
+  primitives/transaction.cpp
   net_types.cpp
   netaddress.cpp
   netbase.cpp
+  common/sockman.cpp
   outputtype.cpp
   policy/feerate.cpp
-  policy/policy.cpp
-  pow.cpp
-  scheduler.cpp
-  script/descriptor.cpp
-  script/miniscript.cpp
-  script/parsing.cpp
-  script/sign.cpp
-  script/signingprovider.cpp
-  script/solver.cpp
+  uint256.cpp
 )
 target_link_libraries(bitcoin_common
   PRIVATE
     core_interface
-    bitcoin_consensus
     bitcoin_util
     univalue
     secp256k1

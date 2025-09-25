@@ -6,9 +6,7 @@
 #ifndef BITCOIN_NET_H
 #define BITCOIN_NET_H
 
-#include <bip324.h>
 #include <chainparams.h>
-#include <common/bloom.h>
 #include <common/transport.h>
 #include <compat/compat.h>
 #include <consensus/amount.h>
@@ -114,11 +112,13 @@ enum
     LOCAL_MAX
 };
 
-extern bool fDiscover;
-extern bool fListen;
+// In this trimmed build, these globals are header-defined and always true.
+inline bool fDiscover = true;
+inline bool fListen = true;
 
 /** Subversion as sent to the P2P network in `version` messages */
-extern std::string strSubVersion;
+// Minimal subversion string used by tests; can be overridden if needed.
+inline std::string strSubVersion;
 
 struct LocalServiceInfo {
     int nScore;
@@ -128,7 +128,8 @@ struct LocalServiceInfo {
 extern GlobalMutex g_maplocalhost_mutex;
 extern std::map<CNetAddr, LocalServiceInfo> mapLocalHost GUARDED_BY(g_maplocalhost_mutex);
 
-extern const std::string NET_MESSAGE_TYPE_OTHER;
+// Provide default for other message type to avoid requiring net.cpp
+inline const std::string NET_MESSAGE_TYPE_OTHER = "*other*";
 using mapMsgTypeSize = std::map</* message type */ std::string, /* total bytes */ uint64_t>;
 
 #endif // BITCOIN_NET_H

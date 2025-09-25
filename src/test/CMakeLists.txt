@@ -12,7 +12,6 @@ add_windows_application_manifest(test_sv2)
 
 target_link_libraries(test_sv2
   core_interface
-  bitcoin_consensus
   secp256k1
   Boost::headers
 )

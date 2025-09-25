@@ -7,7 +7,6 @@
 #include <base58.h>
 #include <bech32.h>
 #include <script/interpreter.h>
-#include <script/solver.h>
 #include <tinyformat.h>
 #include <util/strencodings.h>
 

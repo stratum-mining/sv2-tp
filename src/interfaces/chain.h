@@ -5,7 +5,6 @@
 #ifndef BITCOIN_INTERFACES_CHAIN_H
 #define BITCOIN_INTERFACES_CHAIN_H
 
-#include <blockfilter.h>
 #include <common/settings.h>
 #include <primitives/transaction.h>
 #include <util/result.h>

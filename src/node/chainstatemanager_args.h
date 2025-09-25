@@ -6,7 +6,7 @@
 #define BITCOIN_NODE_CHAINSTATEMANAGER_ARGS_H
 
 #include <util/result.h>
-#include <validation.h>
+// Avoid heavy validation.h include in this lightweight header.
 
 class ArgsManager;
 

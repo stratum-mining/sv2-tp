@@ -6,11 +6,16 @@
 #define BITCOIN_NODE_CHAINSTATE_H
 
 #include <util/translation.h>
-#include <validation.h>
 
 #include <cstdint>
 #include <functional>
 #include <tuple>
+
+// Minimal local defaults to avoid depending on validation.h
+static const signed int DEFAULT_CHECKBLOCKS = 6;
+static constexpr int DEFAULT_CHECKLEVEL{3};
+
+class ChainstateManager;
 
 class CTxMemPool;
 

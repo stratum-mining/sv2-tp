@@ -13,7 +13,9 @@
 #include <random.h>
 #include <streams.h>
 #include <txmempool.h>
-#include <validation.h>
+
+// Forward declaration to avoid including validation.h
+bool IsBlockMutated(const CBlock& block, bool check_witness_root);
 
 #include <unordered_map>
 

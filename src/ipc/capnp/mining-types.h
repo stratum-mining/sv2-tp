@@ -11,7 +11,6 @@
 #include <ipc/capnp/mining.capnp.proxy.h>
 #include <node/miner.h>
 #include <node/types.h>
-#include <validation.h>
 
 namespace mp {
 // Custom serializations

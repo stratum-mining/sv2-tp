@@ -25,7 +25,7 @@
 #include <script/sigcache.h>
 #include <sync.h>
 #include <txdb.h>
-#include <txmempool.h>
+#include <kernel/disconnected_transactions.h>
 #include <uint256.h>
 #include <util/byte_units.h>
 #include <util/check.h>
@@ -250,38 +250,6 @@ struct PackageMempoolAcceptResult
     explicit PackageMempoolAcceptResult(const Wtxid& wtxid, const MempoolAcceptResult& result)
         : m_tx_results{ {wtxid, result} } {}
 };
-
-/**
- * Try to add a transaction to the mempool. This is an internal function and is exposed only for testing.
- * Client code should use ChainstateManager::ProcessTransaction()
- *
- * @param[in]  active_chainstate  Reference to the active chainstate.
- * @param[in]  tx                 The transaction to submit for mempool acceptance.
- * @param[in]  accept_time        The timestamp for adding the transaction to the mempool.
- *                                It is also used to determine when the entry expires.
- * @param[in]  bypass_limits      When true, don't enforce mempool fee and capacity limits,
- *                                and set entry_sequence to zero.
- * @param[in]  test_accept        When true, run validation checks but don't submit to mempool.
- *
- * @returns a MempoolAcceptResult indicating whether the transaction was accepted/rejected with reason.
- */
-MempoolAcceptResult AcceptToMemoryPool(Chainstate& active_chainstate, const CTransactionRef& tx,
-                                       int64_t accept_time, bool bypass_limits, bool test_accept)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-
-/**
-* Validate (and maybe submit) a package to the mempool. See doc/policy/packages.md for full details
-* on package validation rules.
-* @param[in]    test_accept         When true, run validation checks but don't submit to mempool.
-* @param[in]    client_maxfeerate    If exceeded by an individual transaction, rest of (sub)package evaluation is aborted.
-*                                   Only for sanity checks against local submission of transactions.
-* @returns a PackageMempoolAcceptResult which includes a MempoolAcceptResult for each transaction.
-* If a transaction fails, validation will exit early and some results may be missing. It is also
-* possible for the package to be partially submitted.
-*/
-PackageMempoolAcceptResult ProcessNewPackage(Chainstate& active_chainstate, CTxMemPool& pool,
-                                                   const Package& txns, bool test_accept, const std::optional<CFeeRate>& client_maxfeerate)
-                                                   EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 /* Mempool validation helper functions */
 
@@ -737,7 +705,7 @@ public:
                       CCoinsViewCache& view, bool fJustCheck = false) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     // Apply the effects of a block disconnection on the UTXO set.
-    bool DisconnectTip(BlockValidationState& state, DisconnectedBlockTransactions* disconnectpool) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+    bool DisconnectTip(BlockValidationState& state, DisconnectedBlockTransactions* disconnectpool) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     // Manual block validity manipulation:
     /** Mark a block as precious and reorganize.
@@ -790,20 +758,16 @@ public:
 
     std::string ToString() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
-    //! Indirection necessary to make lock annotations work with an optional mempool.
-    RecursiveMutex* MempoolMutex() const LOCK_RETURNED(m_mempool->cs)
-    {
-        return m_mempool ? &m_mempool->cs : nullptr;
-    }
+    // Mempool is optional in this build; no dedicated mempool mutex exposure required.
 
 protected:
-    bool ActivateBestChainStep(BlockValidationState& state, CBlockIndex* pindexMostWork, const std::shared_ptr<const CBlock>& pblock, bool& fInvalidFound, ConnectTrace& connectTrace) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+    bool ActivateBestChainStep(BlockValidationState& state, CBlockIndex* pindexMostWork, const std::shared_ptr<const CBlock>& pblock, bool& fInvalidFound, ConnectTrace& connectTrace) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     bool ConnectTip(
         BlockValidationState& state,
         CBlockIndex* pindexNew,
         std::shared_ptr<const CBlock> block_to_connect,
-        ConnectTrace& connectTrace,
-        DisconnectedBlockTransactions& disconnectpool) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+    ConnectTrace& connectTrace,
+    DisconnectedBlockTransactions& disconnectpool) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     void InvalidBlockFound(CBlockIndex* pindex, const BlockValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     CBlockIndex* FindMostWorkChain() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
@@ -828,7 +792,7 @@ protected:
      */
     void MaybeUpdateMempoolForReorg(
         DisconnectedBlockTransactions& disconnectpool,
-        bool fAddToMempool) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+    bool fAddToMempool) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     /** Check warning conditions and do some notifications on new chain tip set. */
     void UpdateTip(const CBlockIndex* pindexNew)

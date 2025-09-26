@@ -4,8 +4,6 @@
 
 #include <common/settings.h>
 
-#include <bitcoin-build-config.h> // IWYU pragma: keep
-
 #include <optional>
 #include <string>
 #include <vector>

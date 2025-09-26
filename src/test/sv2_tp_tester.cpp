@@ -90,12 +90,21 @@ TPTester::~TPTester()
     // Drop client proxies first
     m_mining_proxy.reset();
     m_client_init.reset();
-    // Ask event loop to drop all incoming connections now. This will
-    // close streams on the loop thread and let the loop exit cleanly.
+    // Extra drain phase: multiple barriers give pending posted callbacks
+    // (triggered by proxy/client destructors) a chance to run while the loop
+    // is still alive. This reduces the chance that a late post() races with
+    // loop shutdown and triggers the m_post_fn assertion in EventLoop dtor.
     if (m_loop) {
+        for (int i = 0; i < 5; ++i) {
+            m_loop->sync([&] {});
+            UninterruptibleSleep(20ms);
+        }
+        // Ask event loop to drop all incoming connections now. This will
+        // close streams on the loop thread and let the loop exit cleanly.
         m_loop->sync([&] { m_loop->m_incoming_connections.clear(); });
-        // Brief loop tick to allow any pending RPC shutdown tasks to run
+        // Final brief tick
         m_loop->sync([&] {});
+        UninterruptibleSleep(20ms);
     }
     // Mark FDs invalid to avoid accidental double-close (they are
     // owned by the connections cleared above).

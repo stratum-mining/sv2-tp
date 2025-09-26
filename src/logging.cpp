@@ -170,33 +170,14 @@ bool BCLog::Logger::DefaultShrinkDebugFile() const
 }
 
 static const std::map<std::string, BCLog::LogFlags, std::less<>> LOG_CATEGORIES_BY_STR{
-    {"net", BCLog::NET},
-    {"tor", BCLog::TOR},
-    {"mempool", BCLog::MEMPOOL},
-    {"http", BCLog::HTTP},
     {"bench", BCLog::BENCH},
-    {"walletdb", BCLog::WALLETDB},
-    {"rpc", BCLog::RPC},
-    {"estimatefee", BCLog::ESTIMATEFEE},
-    {"addrman", BCLog::ADDRMAN},
-    {"selectcoins", BCLog::SELECTCOINS},
-    {"reindex", BCLog::REINDEX},
-    {"cmpctblock", BCLog::CMPCTBLOCK},
     {"rand", BCLog::RAND},
-    {"prune", BCLog::PRUNE},
-    {"proxy", BCLog::PROXY},
-    {"mempoolrej", BCLog::MEMPOOLREJ},
-    {"coindb", BCLog::COINDB},
-    {"qt", BCLog::QT},
-    {"validation", BCLog::VALIDATION},
     {"ipc", BCLog::IPC},
 #ifdef DEBUG_LOCKCONTENTION
     {"lock", BCLog::LOCK},
 #endif
-    {"blockstorage", BCLog::BLOCKSTORAGE},
-    {"scan", BCLog::SCAN},
+    {"net", BCLog::NET},
     {"sv2", BCLog::SV2},
-    {"txpackages", BCLog::TXPACKAGES},
 };
 
 static const std::unordered_map<BCLog::LogFlags, std::string> LOG_CATEGORIES_BY_FLAG{

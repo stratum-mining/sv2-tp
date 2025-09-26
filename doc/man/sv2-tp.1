@@ -55,11 +55,9 @@ Output debug and trace logging (default: \fB\-nodebug\fR, supplying <category>
 is optional). If <category> is not supplied or if <category> is 1
 or "all", output all debug logging. If <category> is 0 or "none",
 any other categories are ignored. Other valid values for
-<category> are: addrman, bench, blockstorage, cmpctblock, coindb,
-estimatefee, http, ipc, mempool, mempoolrej, net,
-proxy, prune, qt, rand, reindex, rpc, scan, selectcoins, sv2,
-tor, txpackages, validation, walletdb. This option can be
-specified multiple times to output multiple categories.
+<category> are: bench, rand, ipc, net, sv2 (and lock on debug builds).
+This option can be specified multiple times to output multiple
+categories.
 .HP
 \fB\-debugexclude=\fR<category>
 .IP

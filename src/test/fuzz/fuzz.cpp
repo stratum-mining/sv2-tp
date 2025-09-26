@@ -12,6 +12,7 @@
 #include <util/fs.h>
 #include <util/sock.h>
 #include <util/time.h>
+#include <util/translation.h>
 
 #include <algorithm>
 #include <csignal>
@@ -36,6 +37,8 @@ __AFL_FUZZ_INIT();
 #endif
 
 extern const std::function<void(const std::string&)> G_TEST_LOG_FUN{};
+
+const TranslateFn G_TRANSLATION_FUN{nullptr};
 
 /**
  * A copy of the command line arguments that start with `--`.

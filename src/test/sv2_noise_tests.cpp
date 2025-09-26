@@ -4,6 +4,7 @@
 #include <test/sv2_test_setup.h>
 #include <util/strencodings.h>
 #include <util/vector.h>
+#include <util/time.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -38,11 +39,10 @@ BOOST_AUTO_TEST_CASE(certificate_test)
     auto alice_authority_key{GenerateRandomKey()};
 
     // Create certificate
-    auto epoch_now = std::chrono::system_clock::now().time_since_epoch();
-    uint32_t now = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(epoch_now).count());
+    const uint32_t now = static_cast<uint32_t>(GetTime<std::chrono::seconds>().count());
     uint16_t version = 0;
     uint32_t valid_from = now;
-    uint32_t valid_to = std::numeric_limits<unsigned int>::max();
+    uint32_t valid_to = std::numeric_limits<uint32_t>::max();
 
     auto alice_certificate = Sv2SignatureNoiseMessage(version, valid_from, valid_to,
                                                       XOnlyPubKey(alice_static_key.GetPubKey()), alice_authority_key);
@@ -84,10 +84,10 @@ BOOST_AUTO_TEST_CASE(handshake_and_transport_test)
     auto bob_authority_key{GenerateRandomKey()};
 
     // Create certificates
-    auto epoch_now = std::chrono::system_clock::now().time_since_epoch();
-    uint16_t version = 0;
-    uint32_t valid_from = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(epoch_now).count());
-    uint32_t valid_to = std::numeric_limits<unsigned int>::max();
+    const uint32_t now = static_cast<uint32_t>(GetTime<std::chrono::seconds>().count());
+    const uint16_t version = 0;
+    const uint32_t valid_from = now;
+    const uint32_t valid_to = std::numeric_limits<uint32_t>::max();
 
     auto bob_certificate = Sv2SignatureNoiseMessage(version, valid_from, valid_to,
                                                     XOnlyPubKey(bob_static_key.GetPubKey()),

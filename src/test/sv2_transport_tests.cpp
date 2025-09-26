@@ -13,6 +13,7 @@
 #include <util/bitdeque.h>
 #include <util/strencodings.h>
 #include <util/string.h>
+#include <util/time.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -59,10 +60,10 @@ public:
         auto responder_authority_key{GenerateRandomKey()};
 
         // Create certificates
-        auto epoch_now = std::chrono::system_clock::now().time_since_epoch();
-        uint16_t version = 0;
-        uint32_t valid_from = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(epoch_now).count());
-        uint32_t valid_to =  std::numeric_limits<unsigned int>::max();
+        const uint32_t now = static_cast<uint32_t>(GetTime<std::chrono::seconds>().count());
+        const uint16_t version = 0;
+        const uint32_t valid_from = now > CERT_VALIDITY_LEEWAY_SECONDS ? now - CERT_VALIDITY_LEEWAY_SECONDS : 0;
+        const uint32_t valid_to = std::numeric_limits<uint32_t>::max();
 
         auto responder_certificate = Sv2SignatureNoiseMessage(version, valid_from, valid_to,
                                     XOnlyPubKey(responder_static_key.GetPubKey()), responder_authority_key);

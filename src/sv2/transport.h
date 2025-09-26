@@ -5,10 +5,17 @@
 #ifndef BITCOIN_SV2_TRANSPORT_H
 #define BITCOIN_SV2_TRANSPORT_H
 
+#include <cstdint>
+#include <optional>
+#include <span>
+#include <string>
+
 #include <common/transport.h>
 #include <sv2/messages.h>
 #include <sv2/noise.h>
 #include <sync.h>
+
+static constexpr uint32_t CERT_VALIDITY_LEEWAY_SECONDS{3600};
 
 static constexpr size_t SV2_HEADER_PLAIN_SIZE{6};
 static constexpr size_t SV2_HEADER_ENCRYPTED_SIZE{SV2_HEADER_PLAIN_SIZE + Poly1305::TAGLEN};

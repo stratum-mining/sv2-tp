@@ -5,6 +5,7 @@
 #include <test/util/net.h>
 #include <test/sv2_test_setup.h>
 #include <util/sock.h>
+#include <util/time.h>
 
 #include <memory>
 
@@ -42,11 +43,11 @@ public:
         m_connman_authority_pubkey = XOnlyPubKey(authority_key.GetPubKey());
 
         // Generate and sign certificate
-        auto now{GetTime<std::chrono::seconds>()};
-        uint16_t version = 0;
+        const uint32_t now = static_cast<uint32_t>(GetTime<std::chrono::seconds>().count());
+        const uint16_t version = 0;
         // Start validity a little bit in the past to account for clock difference
-        uint32_t valid_from = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(now).count()) - 3600;
-        uint32_t valid_to =  std::numeric_limits<unsigned int>::max(); // 2106
+        const uint32_t valid_from = now > CERT_VALIDITY_LEEWAY_SECONDS ? now - CERT_VALIDITY_LEEWAY_SECONDS : 0;
+        const uint32_t valid_to = std::numeric_limits<uint32_t>::max(); // 2106
         Sv2SignatureNoiseMessage certificate{version, valid_from, valid_to, XOnlyPubKey(static_key.GetPubKey()), authority_key};
 
         m_connman = std::make_unique<Sv2Connman>(TP_SUBPROTOCOL, static_key, m_connman_authority_pubkey, certificate);

@@ -87,9 +87,21 @@ TPTester::~TPTester()
 {
     // Ensure TP shuts down before tearing down IPC
     m_tp.reset();
-    // Drop client proxies first
-    m_mining_proxy.reset();
-    m_client_init.reset();
+    // Drop client proxies on the EVENT LOOP THREAD to avoid a race where their
+    // destructors post work while other server-side objects are concurrently
+    // being destroyed. Destroying them from the test thread previously caused
+    // intermittent std::system_error("mutex lock failed: Invalid argument") on
+    // macOS CI, indicating a use-after-destroy of a pthread mutex triggered by
+    // cross-thread post() activity during teardown.
+    if (m_loop) {
+        m_loop->sync([&] {
+            m_mining_proxy.reset();
+            m_client_init.reset();
+        });
+    } else {
+        m_mining_proxy.reset();
+        m_client_init.reset();
+    }
     // Extra drain phase: multiple barriers give pending posted callbacks
     // (triggered by proxy/client destructors) a chance to run while the loop
     // is still alive. This reduces the chance that a late post() races with

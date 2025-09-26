@@ -6,7 +6,6 @@
 #define BITCOIN_NETADDRESS_H
 
 #include <compat/compat.h>
-#include <crypto/siphash.h>
 #include <prevector.h>
 #include <random.h>
 #include <serialize.h>
@@ -349,33 +348,6 @@ public:
     {
         READWRITE(AsBase<CNetAddr>(obj), Using<BigEndianFormatter<2>>(obj.port));
     }
-
-    friend class CServiceHash;
-};
-
-class CServiceHash
-{
-public:
-    CServiceHash()
-        : m_salt_k0{FastRandomContext().rand64()},
-          m_salt_k1{FastRandomContext().rand64()}
-    {
-    }
-
-    CServiceHash(uint64_t salt_k0, uint64_t salt_k1) : m_salt_k0{salt_k0}, m_salt_k1{salt_k1} {}
-
-    size_t operator()(const CService& a) const noexcept
-    {
-        CSipHasher hasher(m_salt_k0, m_salt_k1);
-        hasher.Write(a.m_net);
-        hasher.Write(a.port);
-        hasher.Write(a.m_addr);
-        return static_cast<size_t>(hasher.Finalize());
-    }
-
-private:
-    const uint64_t m_salt_k0;
-    const uint64_t m_salt_k1;
 };
 
 #endif // BITCOIN_NETADDRESS_H

@@ -4,7 +4,6 @@
 
 add_library(bitcoin_util STATIC EXCLUDE_FROM_ALL
   batchpriority.cpp
-  bytevectorhash.cpp
   chaintype.cpp
   check.cpp
   exec.cpp
@@ -12,7 +11,6 @@ add_library(bitcoin_util STATIC EXCLUDE_FROM_ALL
   feefrac.cpp
   fs.cpp
   fs_helpers.cpp
-  hasher.cpp
   moneystr.cpp
   rbf.cpp
   readwritefile.cpp

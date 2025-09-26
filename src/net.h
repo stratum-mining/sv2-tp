@@ -10,7 +10,6 @@
 #include <common/transport.h>
 #include <compat/compat.h>
 #include <consensus/amount.h>
-#include <crypto/siphash.h>
 #include <hash.h>
 #include <message_start_chars.h>
 #include <netaddress.h>

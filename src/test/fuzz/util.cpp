@@ -163,69 +163,6 @@ uint32_t ConsumeSequence(FuzzedDataProvider& fuzzed_data_provider) noexcept
                fuzzed_data_provider.ConsumeIntegral<uint32_t>();
 }
 
-std::map<COutPoint, Coin> ConsumeCoins(FuzzedDataProvider& fuzzed_data_provider) noexcept
-{
-    std::map<COutPoint, Coin> coins;
-    LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 10000) {
-        const std::optional<COutPoint> outpoint{ConsumeDeserializable<COutPoint>(fuzzed_data_provider)};
-        if (!outpoint) {
-            break;
-        }
-        const std::optional<Coin> coin{ConsumeDeserializable<Coin>(fuzzed_data_provider)};
-        if (!coin) {
-            break;
-        }
-        coins[*outpoint] = *coin;
-    }
-
-    return coins;
-}
-
-CTxDestination ConsumeTxDestination(FuzzedDataProvider& fuzzed_data_provider) noexcept
-{
-    CTxDestination tx_destination;
-    const size_t call_size{CallOneOf(
-        fuzzed_data_provider,
-        [&] {
-            tx_destination = CNoDestination{};
-        },
-        [&] {
-            bool compressed = fuzzed_data_provider.ConsumeBool();
-            CPubKey pk{ConstructPubKeyBytes(
-                    fuzzed_data_provider,
-                    ConsumeFixedLengthByteVector(fuzzed_data_provider, (compressed ? CPubKey::COMPRESSED_SIZE : CPubKey::SIZE)),
-                    compressed
-            )};
-            tx_destination = PubKeyDestination{pk};
-        },
-        [&] {
-            tx_destination = PKHash{ConsumeUInt160(fuzzed_data_provider)};
-        },
-        [&] {
-            tx_destination = ScriptHash{ConsumeUInt160(fuzzed_data_provider)};
-        },
-        [&] {
-            tx_destination = WitnessV0ScriptHash{ConsumeUInt256(fuzzed_data_provider)};
-        },
-        [&] {
-            tx_destination = WitnessV0KeyHash{ConsumeUInt160(fuzzed_data_provider)};
-        },
-        [&] {
-            tx_destination = WitnessV1Taproot{XOnlyPubKey{ConsumeUInt256(fuzzed_data_provider)}};
-        },
-        [&] {
-            tx_destination = PayToAnchor{};
-        },
-        [&] {
-            std::vector<unsigned char> program{ConsumeRandomLengthByteVector(fuzzed_data_provider, /*max_length=*/40)};
-            if (program.size() < 2) {
-                program = {0, 0};
-            }
-            tx_destination = WitnessUnknown{fuzzed_data_provider.ConsumeIntegralInRange<unsigned int>(2, 16), program};
-        })};
-    Assert(call_size == std::variant_size_v<CTxDestination>);
-    return tx_destination;
-}
 
 CKey ConsumePrivateKey(FuzzedDataProvider& fuzzed_data_provider, std::optional<bool> compressed) noexcept
 {
@@ -237,16 +174,6 @@ CKey ConsumePrivateKey(FuzzedDataProvider& fuzzed_data_provider, std::optional<b
     return key;
 }
 
-bool ContainsSpentInput(const CTransaction& tx, const CCoinsViewCache& inputs) noexcept
-{
-    for (const CTxIn& tx_in : tx.vin) {
-        const Coin& coin = inputs.AccessCoin(tx_in.prevout);
-        if (coin.IsSpent()) {
-            return true;
-        }
-    }
-    return false;
-}
 
 FILE* FuzzedFileProvider::open()
 {

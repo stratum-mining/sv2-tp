@@ -7,7 +7,6 @@
 
 #include <addresstype.h>
 #include <arith_uint256.h>
-#include <coins.h>
 #include <compat/compat.h>
 #include <consensus/amount.h>
 #include <consensus/consensus.h>
@@ -190,10 +189,6 @@ template <typename WeakEnumType, size_t size>
     return result;
 }
 
-[[nodiscard]] std::map<COutPoint, Coin> ConsumeCoins(FuzzedDataProvider& fuzzed_data_provider) noexcept;
-
-[[nodiscard]] CTxDestination ConsumeTxDestination(FuzzedDataProvider& fuzzed_data_provider) noexcept;
-
 [[nodiscard]] CKey ConsumePrivateKey(FuzzedDataProvider& fuzzed_data_provider, std::optional<bool> compressed = std::nullopt) noexcept;
 
 template <typename T>
@@ -218,8 +213,6 @@ template <typename T>
         return j != 0 && i > std::numeric_limits<T>::max() / j;
     }
 }
-
-[[nodiscard]] bool ContainsSpentInput(const CTransaction& tx, const CCoinsViewCache& inputs) noexcept;
 
 /**
  * Sets errno to a value selected from the given std::array `errnos`.

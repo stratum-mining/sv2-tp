@@ -57,6 +57,7 @@ static void AddArgs(ArgsManager& args)
 
     args.AddArg("-version", "Print version and exit", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     args.AddArg("-datadir=<dir>", "Specify non-default Bitcoin Core data directory", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    args.AddArg("-conf=<file>", "Specify path to the configuration file (default: bitcoin.conf inside the datadir). Pass -noconf to disable loading any configuration file.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     args.AddArg("-ipcconnect=<address>", "Connect to bitcoin-node process in the background to perform online operations. Valid <address> values are 'unix' to connect to the default socket, 'unix:<socket path>' to connect to a socket at a nonstandard path. Default value: unix", ArgsManager::ALLOW_ANY, OptionsCategory::IPC);
     args.AddArg("-sv2bind=<addr>[:<port>]", strprintf("Bind to given address and always listen on it (default: 127.0.0.1). Use [host]:port notation for IPv6."), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::CONNECTION);
     args.AddArg("-sv2port=<port>", strprintf("Listen for Stratum v2 connections on <port> (default: %u, testnet3: %u, testnet4: %u, signet: %u, regtest: %u).", defaultBaseParams->Sv2Port(), testnetBaseParams->Sv2Port(), testnet4BaseParams->Sv2Port(), signetBaseParams->Sv2Port(), regtestBaseParams->Sv2Port()), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::CONNECTION);
@@ -114,7 +115,7 @@ MAIN_FUNCTION
     }
     SelectParams(args.GetChainType());
 
-    // Set logging options but override -printtoconsole default to depend on -debug rather than -daemon
+    // Set logging options using sv2-tp defaults
     init::SetLoggingOptions(args);
     if (auto result{init::SetLoggingCategories(args)}; !result) {
         tfm::format(std::cerr, "Error: %s\n", util::ErrorString(result).original);

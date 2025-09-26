@@ -37,7 +37,6 @@
 #include <variant>
 
 const char * const BITCOIN_CONF_FILENAME = "bitcoin.conf";
-const char * const BITCOIN_SETTINGS_FILENAME = "settings.json";
 
 ArgsManager gArgs;
 
@@ -269,31 +268,6 @@ fs::path ArgsManager::GetPathArg(std::string arg, const fs::path& default_value)
     return result.has_filename() ? result : result.parent_path();
 }
 
-fs::path ArgsManager::GetBlocksDirPath() const
-{
-    LOCK(cs_args);
-    fs::path& path = m_cached_blocks_path;
-
-    // Cache the path to avoid calling fs::create_directories on every call of
-    // this function
-    if (!path.empty()) return path;
-
-    if (IsArgSet("-blocksdir")) {
-        path = fs::absolute(GetPathArg("-blocksdir"));
-        if (!fs::is_directory(path)) {
-            path = "";
-            return path;
-        }
-    } else {
-        path = GetDataDirBase();
-    }
-
-    path /= fs::PathFromString(BaseParams().DataDir());
-    path /= "blocks";
-    fs::create_directories(path);
-    return path;
-}
-
 fs::path ArgsManager::GetDataDir(bool net_specific) const
 {
     LOCK(cs_args);
@@ -326,7 +300,6 @@ void ArgsManager::ClearPathCache()
 
     m_cached_datadir_path = fs::path();
     m_cached_network_datadir_path = fs::path();
-    m_cached_blocks_path = fs::path();
 }
 
 std::optional<const ArgsManager::Command> ArgsManager::GetCommand() const
@@ -361,75 +334,6 @@ std::vector<std::string> ArgsManager::GetArgs(const std::string& strArg) const
 bool ArgsManager::IsArgSet(const std::string& strArg) const
 {
     return !GetSetting(strArg).isNull();
-}
-
-bool ArgsManager::GetSettingsPath(fs::path* filepath, bool temp, bool backup) const
-{
-    fs::path settings = GetPathArg("-settings", BITCOIN_SETTINGS_FILENAME);
-    if (settings.empty()) {
-        return false;
-    }
-    if (backup) {
-        settings += ".bak";
-    }
-    if (filepath) {
-        *filepath = fsbridge::AbsPathJoin(GetDataDirNet(), temp ? settings + ".tmp" : settings);
-    }
-    return true;
-}
-
-static void SaveErrors(const std::vector<std::string> errors, std::vector<std::string>* error_out)
-{
-    for (const auto& error : errors) {
-        if (error_out) {
-            error_out->emplace_back(error);
-        } else {
-            LogPrintf("%s\n", error);
-        }
-    }
-}
-
-bool ArgsManager::ReadSettingsFile(std::vector<std::string>* errors)
-{
-    fs::path path;
-    if (!GetSettingsPath(&path, /* temp= */ false)) {
-        return true; // Do nothing if settings file disabled.
-    }
-
-    LOCK(cs_args);
-    m_settings.rw_settings.clear();
-    std::vector<std::string> read_errors;
-    if (!common::ReadSettings(path, m_settings.rw_settings, read_errors)) {
-        SaveErrors(read_errors, errors);
-        return false;
-    }
-    for (const auto& setting : m_settings.rw_settings) {
-        KeyInfo key = InterpretKey(setting.first); // Split setting key into section and argname
-        if (!GetArgFlags('-' + key.name)) {
-            LogPrintf("Ignoring unknown rw_settings value %s\n", setting.first);
-        }
-    }
-    return true;
-}
-
-bool ArgsManager::WriteSettingsFile(std::vector<std::string>* errors, bool backup) const
-{
-    fs::path path, path_tmp;
-    if (!GetSettingsPath(&path, /*temp=*/false, backup) || !GetSettingsPath(&path_tmp, /*temp=*/true, backup)) {
-        throw std::logic_error("Attempt to write settings file when dynamic settings are disabled.");
-    }
-
-    LOCK(cs_args);
-    std::vector<std::string> write_errors;
-    if (!common::WriteSettings(path_tmp, m_settings.rw_settings, write_errors)) {
-        SaveErrors(write_errors, errors);
-        return false;
-    }
-    if (!RenameOver(path_tmp, path)) {
-        SaveErrors({strprintf("Failed renaming settings file %s to %s\n", fs::PathToString(path_tmp), fs::PathToString(path))}, errors);
-        return false;
-    }
-    return true;
 }
 
 common::SettingsValue ArgsManager::GetPersistentSetting(const std::string& name) const
@@ -606,11 +510,11 @@ void ArgsManager::CheckMultipleCLIArgs() const
 
 std::string ArgsManager::GetHelpMessage() const
 {
-    const bool show_debug = GetBoolArg("-help-debug", false);
-
     std::string usage;
     LOCK(cs_args);
     for (const auto& arg_map : m_available_args) {
+        if (arg_map.first == OptionsCategory::HIDDEN) break;
+        if (arg_map.first == OptionsCategory::WALLET_DEBUG_TEST) continue;
         switch(arg_map.first) {
             case OptionsCategory::OPTIONS:
                 usage += HelpMessageGroup("Options:");
@@ -636,9 +540,6 @@ std::string ArgsManager::GetHelpMessage() const
             case OptionsCategory::WALLET:
                 usage += HelpMessageGroup("Wallet options:");
                 break;
-            case OptionsCategory::WALLET_DEBUG_TEST:
-                if (show_debug) usage += HelpMessageGroup("Wallet debugging/testing options:");
-                break;
             case OptionsCategory::CHAINPARAMS:
                 usage += HelpMessageGroup("Chain selection options:");
                 break;
@@ -658,19 +559,15 @@ std::string ArgsManager::GetHelpMessage() const
                 break;
         }
 
-        // When we get to the hidden options, stop
-        if (arg_map.first == OptionsCategory::HIDDEN) break;
-
         for (const auto& arg : arg_map.second) {
-            if (show_debug || !(arg.second.m_flags & ArgsManager::DEBUG_ONLY)) {
-                std::string name;
-                if (arg.second.m_help_param.empty()) {
-                    name = arg.first;
-                } else {
-                    name = arg.first + arg.second.m_help_param;
-                }
-                usage += HelpMessageOpt(name, arg.second.m_help_text);
+            if (arg.second.m_flags & ArgsManager::DEBUG_ONLY) continue;
+            std::string name;
+            if (arg.second.m_help_param.empty()) {
+                name = arg.first;
+            } else {
+                name = arg.first + arg.second.m_help_param;
             }
+            usage += HelpMessageOpt(name, arg.second.m_help_text);
         }
     }
     return usage;
@@ -678,7 +575,7 @@ std::string ArgsManager::GetHelpMessage() const
 
 bool HelpRequested(const ArgsManager& args)
 {
-    return args.IsArgSet("-?") || args.IsArgSet("-h") || args.IsArgSet("-help") || args.IsArgSet("-help-debug");
+    return args.IsArgSet("-?") || args.IsArgSet("-h") || args.IsArgSet("-help");
 }
 
 void SetupHelpOptions(ArgsManager& args)
@@ -700,20 +597,6 @@ std::string HelpMessageOpt(const std::string &option, const std::string &message
            std::string("\n") + std::string(msgIndent,' ') +
            FormatParagraph(message, screenWidth - msgIndent, msgIndent) +
            std::string("\n\n");
-}
-
-const std::vector<std::string> TEST_OPTIONS_DOC{
-    "addrman (use deterministic addrman)",
-    "reindex_after_failure_noninteractive_yes (When asked for a reindex after failure interactively, simulate as-if answered with 'yes')",
-    "bip94 (enforce BIP94 consensus rules)",
-};
-
-bool HasTestOption(const ArgsManager& args, const std::string& test_option)
-{
-    const auto options = args.GetArgs("-test");
-    return std::any_of(options.begin(), options.end(), [test_option](const auto& option) {
-        return option == test_option;
-    });
 }
 
 fs::path GetDefaultDataDir()

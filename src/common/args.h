@@ -24,7 +24,6 @@
 class ArgsManager;
 
 extern const char * const BITCOIN_CONF_FILENAME;
-extern const char * const BITCOIN_SETTINGS_FILENAME;
 
 // Return true if -datadir option points to a valid directory or is not specified.
 bool CheckDataDirOption(const ArgsManager& args);
@@ -139,7 +138,6 @@ protected:
     bool m_accept_any_command GUARDED_BY(cs_args){true};
     std::list<SectionInfo> m_config_sections GUARDED_BY(cs_args);
     std::optional<fs::path> m_config_path GUARDED_BY(cs_args);
-    mutable fs::path m_cached_blocks_path GUARDED_BY(cs_args);
     mutable fs::path m_cached_datadir_path GUARDED_BY(cs_args);
     mutable fs::path m_cached_network_datadir_path GUARDED_BY(cs_args);
 
@@ -212,13 +210,6 @@ protected:
     std::optional<const Command> GetCommand() const;
 
     /**
-     * Get blocks directory path
-     *
-     * @return Blocks path which is network specific
-     */
-    fs::path GetBlocksDirPath() const;
-
-    /**
      * Get data directory path
      *
      * @return Absolute path on success, otherwise an empty path when a non-directory path would be returned
@@ -275,7 +266,7 @@ protected:
     /**
      * Return path argument or default value
      *
-     * @param arg Argument to get a path from (e.g., "-datadir", "-blocksdir" or "-walletdir")
+    * @param arg Argument to get a path from (e.g., "-datadir" or "-walletdir")
      * @param default_value Optional default value to return instead of the empty path.
      * @return normalized path if argument is set, with redundant "." and ".."
      * path components and trailing separators removed (see patharg unit test
@@ -382,19 +373,6 @@ protected:
      * Get settings file path, or return false if read-write settings were
      * disabled with -nosettings.
      */
-    bool GetSettingsPath(fs::path* filepath = nullptr, bool temp = false, bool backup = false) const;
-
-    /**
-     * Read settings file. Push errors to vector, or log them if null.
-     */
-    bool ReadSettingsFile(std::vector<std::string>* errors = nullptr);
-
-    /**
-     * Write settings file or backup settings file. Push errors to vector, or
-     * log them if null.
-     */
-    bool WriteSettingsFile(std::vector<std::string>* errors = nullptr, bool backup = false) const;
-
     /**
      * Get current setting from config file or read/write settings file,
      * ignoring nonpersistent command line or forced settings values.
@@ -454,8 +432,6 @@ void SetupHelpOptions(ArgsManager& args);
 extern const std::vector<std::string> TEST_OPTIONS_DOC;
 
 /** Checks if a particular test option is present in -test command-line arg options */
-bool HasTestOption(const ArgsManager& args, const std::string& test_option);
-
 /**
  * Format a string to be used as group of options in help messages
  *

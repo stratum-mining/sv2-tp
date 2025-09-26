@@ -16,34 +16,16 @@ sv2\-tp [options]
 .IP
 Specify non\-default Bitcoin Core data directory
 .HP
-\fB\-blocksdir=\fR<dir>
-.IP
-Specify an alternate directory to store blockchain data. Overrides the default
-location inside the datadir.
-.HP
 \fB\-conf=\fR<file>
 .IP
 Specify path to the configuration file (default: bitcoin.conf inside the
-datadir).
-.HP
-\fB\-settings=\fR<file>
-.IP
-Specify path to the persistent settings file (default: settings.json inside the
-datadir).
-.HP
-\fB\-daemon\fR
-.IP
-Run sv2\-tp in the background as a daemon (Unix like systems only).
+datadir). Pass \fB\-noconf\fR to disable loading any configuration file.
 .HP
 \fB\-debuglogfile=\fR<file>
 .IP
 Specify location of debug log file (default: debug.log). Relative paths
 will be prefixed by a net\-specific datadir location. Pass
 \fB\-nodebuglogfile\fR to disable writing the log to a file.
-.HP
-\fB\-help\-debug\fR
-.IP
-Print help message showing debug options and exit.
 .HP
 \fB\-help\fR
 .IP
@@ -115,8 +97,8 @@ Prepend debug output with timestamp (default: 1)
 .HP
 \fB\-printtoconsole\fR
 .IP
-Send trace/debug info to console (default: 1 when no \fB\-daemon\fR. To disable
-logging to file, set \fB\-nodebuglogfile\fR)
+Send trace/debug info to console (default: 1). To disable logging to file, set
+\fB\-nodebuglogfile\fR
 .HP
 \fB\-shrinkdebugfile\fR
 .IP
@@ -156,11 +138,6 @@ Consider moving to testnet4 now by using \fB\-testnet4\fR.
 \fB\-testnet4\fR
 .IP
 Use the testnet4 chain. Equivalent to \fB\-chain\fR=\fI\,testnet4\/\fR.
-.HP
-\fB\-test=\fR<name>
-.IP
-Enable internal test toggles (for example \fB\-test=addrman\fR). Multiple
-options may be provided by repeating the argument.
 .HP
 \fB\-fastprune\fR
 .IP

@@ -5,6 +5,7 @@
 #ifndef BITCOIN_INTERFACES_INIT_H
 #define BITCOIN_INTERFACES_INIT_H
 
+#include <interfaces/echo.h>
 #include <interfaces/mining.h>
 
 #include <memory>
@@ -20,6 +21,7 @@ class Init
 {
 public:
     virtual ~Init() = default;
+    virtual std::unique_ptr<Echo> makeEcho() { return nullptr; }
     virtual std::unique_ptr<Mining> makeMining() { return nullptr; }
     virtual Ipc* ipc() { return nullptr; }
     virtual bool canListenIpc() { return false; }

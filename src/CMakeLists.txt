@@ -70,6 +70,7 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   common/system.cpp
   hash.cpp
   deploymentinfo.cpp
+  interfaces/echo.cpp
   init/common.cpp
   key.cpp
   pubkey.cpp

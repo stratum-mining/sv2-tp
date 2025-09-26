@@ -11,6 +11,7 @@ class BitcoinBasicInit : public interfaces::Init
 {
 public:
     BitcoinBasicInit(const char* exe_name, const char* process_argv0) : m_ipc(interfaces::MakeIpc(exe_name, process_argv0, *this)) {}
+    std::unique_ptr<interfaces::Echo> makeEcho() override { return interfaces::MakeEcho(); }
     interfaces::Ipc* ipc() override { return m_ipc.get(); }
 private:
     std::unique_ptr<interfaces::Ipc> m_ipc;

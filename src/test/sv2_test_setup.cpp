@@ -2,17 +2,16 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://opensource.org/license/mit/.
 
-#include "sv2_test_setup.h"
+#include <test/sv2_test_setup.h>
 
 #include <chainparamsbase.h>
 #include <common/args.h>
+#include <key.h>
 #include <util/chaintype.h>
-#include <util/time.h>
 #include <util/string.h>
+#include <util/time.h>
 #include <array>
 #include <string>
-#include <key.h>
-#include <common/args.h>
 
 Sv2BasicTestingSetup::Sv2BasicTestingSetup()
 {

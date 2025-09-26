@@ -3,7 +3,7 @@
 #include <sv2/messages.h>
 #include <sv2/transport.h>
 #include <test/util/net.h>
-#include "sv2_test_setup.h"
+#include <test/sv2_test_setup.h>
 #include <util/sock.h>
 
 #include <memory>

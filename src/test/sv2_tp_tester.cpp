@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://opensource.org/license/mit/.
 
-#include "sv2_tp_tester.h"
+#include <test/sv2_tp_tester.h>
 
 #include <boost/test/unit_test.hpp>
 #include <interfaces/init.h>
@@ -18,7 +18,7 @@
 // Forward-declare the test logging callback provided by main.cpp
 extern std::function<void(const std::string&)> G_TEST_LOG_FUN;
 
-#include "sv2_mock_mining.h"
+#include <test/sv2_mock_mining.h>
 
 #include <future>
 #include <sys/socket.h>

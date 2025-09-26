@@ -13,8 +13,6 @@ import sys
 
 EXPECTED_CIRCULAR_DEPENDENCIES = (
     "chainparamsbase -> common/args -> chainparamsbase",
-    "node/blockstorage -> validation -> node/blockstorage",
-    "versionbits -> versionbits_impl -> versionbits",
 )
 
 CODE_DIR = "src"

@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://opensource.org/license/mit/.
 
-#include "sv2_mock_mining.h"
+#include <test/sv2_mock_mining.h>
 
 #include <sync.h>
 

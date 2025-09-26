@@ -16,11 +16,34 @@ sv2\-tp [options]
 .IP
 Specify non\-default Bitcoin Core data directory
 .HP
+\fB\-blocksdir=\fR<dir>
+.IP
+Specify an alternate directory to store blockchain data. Overrides the default
+location inside the datadir.
+.HP
+\fB\-conf=\fR<file>
+.IP
+Specify path to the configuration file (default: bitcoin.conf inside the
+datadir).
+.HP
+\fB\-settings=\fR<file>
+.IP
+Specify path to the persistent settings file (default: settings.json inside the
+datadir).
+.HP
+\fB\-daemon\fR
+.IP
+Run sv2\-tp in the background as a daemon (Unix like systems only).
+.HP
 \fB\-debuglogfile=\fR<file>
 .IP
 Specify location of debug log file (default: debug.log). Relative paths
 will be prefixed by a net\-specific datadir location. Pass
 \fB\-nodebuglogfile\fR to disable writing the log to a file.
+.HP
+\fB\-help\-debug\fR
+.IP
+Print help message showing debug options and exit.
 .HP
 \fB\-help\fR
 .IP
@@ -67,6 +90,11 @@ takes priority over "\-debug"
 \fB\-logips\fR
 .IP
 Include IP addresses in debug output (default: 0)
+.HP
+\fB\-logratelimit\fR
+.IP
+Apply rate limiting to unconditional logging to mitigate disk filling attacks
+(default: 1).
 .HP
 \fB\-loglevelalways\fR
 .IP
@@ -128,6 +156,16 @@ Consider moving to testnet4 now by using \fB\-testnet4\fR.
 \fB\-testnet4\fR
 .IP
 Use the testnet4 chain. Equivalent to \fB\-chain\fR=\fI\,testnet4\/\fR.
+.HP
+\fB\-test=\fR<name>
+.IP
+Enable internal test toggles (for example \fB\-test=addrman\fR). Multiple
+options may be provided by repeating the argument.
+.HP
+\fB\-fastprune\fR
+.IP
+Accelerate pruning related operations on regtest chains when generating
+synthetic workloads.
 .PP
 Block creation options:
 .HP

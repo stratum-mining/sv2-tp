@@ -1170,9 +1170,8 @@ communication:
   process, and other implementations can forward calls to remote processes.
 
 - Interface method definitions should wrap existing functionality instead of
-  implementing new functionality. Any substantial new node or wallet
-  functionality should be implemented in [`src/node/`](../src/node/)
-  and just exposed in
+  implementing new functionality. Any substantial new functionality should be
+  implemented in the relevant module and just exposed in
   [`src/interfaces/`](../src/interfaces/) instead of being implemented there,
   so it can be more modular and accessible to unit tests.
 

@@ -8,8 +8,8 @@
 #include <serialize.h>
 #include <span.h>
 #include <streams.h>
+#include <test/sv2_test_setup.h>
 #include <test/util/random.h>
-#include "sv2_test_setup.h"
 #include <util/bitdeque.h>
 #include <util/strencodings.h>
 #include <util/string.h>

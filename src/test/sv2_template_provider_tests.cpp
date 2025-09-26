@@ -2,8 +2,10 @@
 #include <interfaces/mining.h>
 #include <interfaces/init.h>
 #include <sv2/messages.h>
+#include <test/sv2_mock_mining.h>
+#include <test/sv2_test_setup.h>
+#include <test/sv2_tp_tester.h>
 #include <test/util/net.h>
-#include "sv2_test_setup.h"
 #include <util/sock.h>
 #include <util/strencodings.h>
 // Synchronization primitives (Mutex/LOCK)
@@ -12,9 +14,6 @@
 #include <script/script.h>
 
 // Test harness and mocks
-#include "sv2_tp_tester.h"
-#include "sv2_mock_mining.h"
-
 #include <future>
 #include <memory>
 #include <thread>

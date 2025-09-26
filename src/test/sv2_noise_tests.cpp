@@ -1,7 +1,7 @@
 #include <sv2/noise.h>
 #include <key.h>
 #include <random.h>
-#include "sv2_test_setup.h"
+#include <test/sv2_test_setup.h>
 #include <util/strencodings.h>
 #include <util/vector.h>
 

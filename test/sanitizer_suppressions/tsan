@@ -22,3 +22,6 @@ race:epoll_ctl
 
 # https://github.com/bitcoin/bitcoin/issues/23366
 race:std::__1::ios_base::*
+
+# https://github.com/bitcoin/bitcoin/issues/xxxx (sv2_template_provider_tests ThreadSanitizer wakeup race)
+race:mp::EventLoopRef::reset

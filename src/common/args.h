@@ -70,13 +70,12 @@ enum class OptionsCategory {
 struct KeyInfo {
     std::string name;
     std::string section;
-    bool negated{false};
 };
 
 KeyInfo InterpretKey(std::string key);
 
-std::optional<common::SettingsValue> InterpretValue(const KeyInfo& key, const std::string* value,
-                                                         unsigned int flags, std::string& error);
+std::optional<std::string> InterpretValue(const KeyInfo& key, const std::string* value,
+    unsigned int flags, std::string& error);
 
 struct SectionInfo {
     std::string m_name;
@@ -84,14 +83,14 @@ struct SectionInfo {
     int m_line;
 };
 
-std::string SettingToString(const common::SettingsValue&, const std::string&);
-std::optional<std::string> SettingToString(const common::SettingsValue&);
+std::string SettingToString(const std::optional<std::string>&, const std::string&);
+std::optional<std::string> SettingToString(const std::optional<std::string>&);
 
-int64_t SettingToInt(const common::SettingsValue&, int64_t);
-std::optional<int64_t> SettingToInt(const common::SettingsValue&);
+int64_t SettingToInt(const std::optional<std::string>&, int64_t);
+std::optional<int64_t> SettingToInt(const std::optional<std::string>&);
 
-bool SettingToBool(const common::SettingsValue&, bool);
-std::optional<bool> SettingToBool(const common::SettingsValue&);
+bool SettingToBool(const std::optional<std::string>&, bool);
+std::optional<bool> SettingToBool(const std::optional<std::string>&);
 
 class ArgsManager
 {
@@ -106,7 +105,6 @@ public:
         // ALLOW_INT = 0x04,      //!< unimplemented, draft implementation in #16545
         // ALLOW_STRING = 0x08,   //!< unimplemented, draft implementation in #16545
         // ALLOW_LIST = 0x10,     //!< unimplemented, draft implementation in #16545
-        DISALLOW_NEGATION = 0x20, //!< disallow -nofoo syntax
         DISALLOW_ELISION = 0x40,  //!< disallow -foo syntax that doesn't assign any value
 
         DEBUG_ONLY = 0x100,
@@ -154,16 +152,16 @@ protected:
     /**
      * Get setting value.
      *
-     * Result will be null if setting was unset, true if "-setting" argument was passed
-     * false if "-nosetting" argument was passed, and a string if a "-setting=value"
-     * argument was passed.
-     */
-    common::SettingsValue GetSetting(const std::string& arg) const;
+    * Result will be null if setting was unset, otherwise it contains the most recent
+    * string value provided for the option. Passing "-setting" with no value stores
+    * an empty string, which callers may interpret as "true" for boolean options.
+    */
+    std::optional<std::string> GetSetting(const std::string& arg) const;
 
     /**
      * Get list of setting values.
      */
-    std::vector<common::SettingsValue> GetSettingsList(const std::string& arg) const;
+    std::vector<std::string> GetSettingsList(const std::string& arg) const;
 
     ArgsManager();
     ~ArgsManager();
@@ -251,7 +249,7 @@ protected:
      * @param strArg Argument to get (e.g. "-foo")
      * @return true if the argument was passed negated
      */
-    bool IsArgNegated(const std::string& strArg) const;
+    bool IsArgDisabled(const std::string& strArg) const;
 
     /**
      * Return string argument or default value
@@ -370,16 +368,6 @@ protected:
     std::optional<unsigned int> GetArgFlags(const std::string& name) const;
 
     /**
-     * Get settings file path, or return false if read-write settings were
-     * disabled with -nosettings.
-     */
-    /**
-     * Get current setting from config file or read/write settings file,
-     * ignoring nonpersistent command line or forced settings values.
-     */
-    common::SettingsValue GetPersistentSetting(const std::string& name) const;
-
-    /**
      * Access settings with lock held.
      */
     template <typename Fn>
@@ -416,7 +404,7 @@ private:
     void logArgsPrefix(
         const std::string& prefix,
         const std::string& section,
-        const std::map<std::string, std::vector<common::SettingsValue>>& args) const;
+        const std::map<std::string, std::vector<std::string>>& args) const;
 };
 
 extern ArgsManager gArgs;

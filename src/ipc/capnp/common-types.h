@@ -10,7 +10,6 @@
 #include <primitives/transaction.h>
 #include <serialize.h>
 #include <streams.h>
-#include <univalue.h>
 
 #include <cstddef>
 #include <mp/proxy-types.h>
@@ -105,26 +104,6 @@ requires ipc::capnp::Deserializable<LocalType>
     SpanReader stream({data.begin(), data.end()});
     auto wrapper{ipc::capnp::Wrap(stream)};
     return read_dest.construct(::deserialize, wrapper);
-}
-
-//! Overload CustomBuildField and CustomReadField to serialize UniValue
-//! parameters and return values as JSON strings.
-template <typename Value, typename Output>
-void CustomBuildField(TypeList<UniValue>, Priority<1>, InvokeContext& invoke_context, Value&& value, Output&& output)
-{
-    std::string str = value.write();
-    auto result = output.init(str.size());
-    memcpy(result.begin(), str.data(), str.size());
-}
-
-template <typename Input, typename ReadDest>
-decltype(auto) CustomReadField(TypeList<UniValue>, Priority<1>, InvokeContext& invoke_context, Input&& input,
-                               ReadDest&& read_dest)
-{
-    return read_dest.update([&](auto& value) {
-        auto data = input.get();
-        value.read(std::string_view{data.begin(), data.size()});
-    });
 }
 
 } // namespace mp

@@ -11,11 +11,10 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
 # Subprojects
 #=============================
 # Subprojects include subdirectories that do or could have tests
-# and/or benchmark binaries, such as all subtrees and univalue.
+# and/or benchmark binaries.
 # These need to be included before CMAKE_*_OUTPUT_DIRECTORY variables
 # are set, so output locations of subproject tests and libraries are
 # not overridden.
-add_subdirectory(univalue)
 if (NOT WITH_EXTERNAL_LIBMULTIPROCESS)
   include(../cmake/libmultiprocess.cmake)
   add_libmultiprocess(ipc/libmultiprocess)
@@ -76,7 +75,6 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   pubkey.cpp
   primitives/block.cpp
   primitives/transaction.cpp
-  net_types.cpp
   netaddress.cpp
   netbase.cpp
   common/sockman.cpp
@@ -86,7 +84,6 @@ target_link_libraries(bitcoin_common
   PRIVATE
     core_interface
     bitcoin_util
-    univalue
     secp256k1
     Boost::headers
     $<$<PLATFORM_ID:Windows>:ws2_32>

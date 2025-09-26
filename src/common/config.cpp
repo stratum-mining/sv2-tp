@@ -8,7 +8,6 @@
 #include <logging.h>
 #include <sync.h>
 #include <tinyformat.h>
-#include <univalue.h>
 #include <util/chaintype.h>
 #include <util/fs.h>
 #include <util/string.h>
@@ -102,7 +101,7 @@ bool ArgsManager::ReadConfigStream(std::istream& stream, const std::string& file
         std::optional<unsigned int> flags = GetArgFlags('-' + key.name);
         if (!IsConfSupported(key, error)) return false;
         if (flags) {
-            std::optional<common::SettingsValue> value = InterpretValue(key, &option.second, *flags, error);
+            std::optional<std::string> value = InterpretValue(key, &option.second, *flags, error);
             if (!value) {
                 return false;
             }
@@ -130,7 +129,7 @@ bool ArgsManager::ReadConfigFiles(std::string& error, bool ignore_invalid_keys)
 
     const auto conf_path{GetConfigFilePath()};
     std::ifstream stream;
-    if (!conf_path.empty()) { // path is empty when -noconf is specified
+    if (!conf_path.empty()) { // path is empty when the config file is disabled
         if (fs::is_directory(conf_path)) {
             error = strprintf("Config file \"%s\" is a directory.", fs::PathToString(conf_path));
             return false;

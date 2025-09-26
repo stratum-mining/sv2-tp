@@ -10,7 +10,6 @@
 #include <logging.h>
 #include <sync.h>
 #include <tinyformat.h>
-#include <univalue.h>
 #include <util/chaintype.h>
 #include <util/check.h>
 #include <util/fs.h>
@@ -68,12 +67,7 @@ static std::string SettingName(const std::string& arg)
 }
 
 /**
- * Parse "name", "section.name", "noname", "section.noname" settings keys.
- *
- * @note Where an option was negated can be later checked using the
- * IsArgNegated() method. One use case for this is to have a way to disable
- * options that are not normally boolean (e.g. using -nodebuglogfile to request
- * that debug log output is not sent to any file at all).
+ * Parse "name" and "section.name" settings keys.
  */
 KeyInfo InterpretKey(std::string key)
 {
@@ -83,10 +77,6 @@ KeyInfo InterpretKey(std::string key)
     if (option_index != std::string::npos) {
         result.section = key.substr(0, option_index);
         key.erase(0, option_index + 1);
-    }
-    if (key.starts_with("no")) {
-        key.erase(0, 2);
-        result.negated = true;
     }
     result.name = key;
     return result;
@@ -103,22 +93,9 @@ KeyInfo InterpretKey(std::string key)
  * @return parsed settings value if it is valid, otherwise nullopt accompanied
  * by a descriptive error string
  */
-std::optional<common::SettingsValue> InterpretValue(const KeyInfo& key, const std::string* value,
-                                                  unsigned int flags, std::string& error)
+std::optional<std::string> InterpretValue(const KeyInfo& key, const std::string* value,
+    unsigned int flags, std::string& error)
 {
-    // Return negated settings as false values.
-    if (key.negated) {
-        if (flags & ArgsManager::DISALLOW_NEGATION) {
-            error = strprintf("Negating of -%s is meaningless and therefore forbidden", key.name);
-            return std::nullopt;
-        }
-        // Double negatives like -nofoo=0 are supported (but discouraged)
-        if (value && !InterpretBool(*value)) {
-            LogPrintf("Warning: parsed potentially confusing double-negative -%s=%s\n", key.name, *value);
-            return true;
-        }
-        return false;
-    }
     if (!value && (flags & ArgsManager::DISALLOW_ELISION)) {
         error = strprintf("Can not set -%s with no value. Please specify value with -%s=value.", key.name, key.name);
         return std::nullopt;
@@ -237,7 +214,7 @@ bool ArgsManager::ParseParameters(int argc, const char* const argv[], std::strin
             return false;
         }
 
-        std::optional<common::SettingsValue> value = InterpretValue(keyinfo, val ? &*val : nullptr, *flags, error);
+    std::optional<std::string> value = InterpretValue(keyinfo, val ? &*val : nullptr, *flags, error);
         if (!value) return false;
 
         m_settings.command_line_options[keyinfo.name].push_back(*value);
@@ -260,10 +237,10 @@ std::optional<unsigned int> ArgsManager::GetArgFlags(const std::string& name) co
 
 fs::path ArgsManager::GetPathArg(std::string arg, const fs::path& default_value) const
 {
-    if (IsArgNegated(arg)) return fs::path{};
-    std::string path_str = GetArg(arg, "");
-    if (path_str.empty()) return default_value;
-    fs::path result = fs::PathFromString(path_str).lexically_normal();
+    if (IsArgDisabled(arg)) return fs::path{};
+    std::optional<std::string> path = GetArg(arg);
+    if (!path || path->empty()) return default_value;
+    fs::path result = fs::PathFromString(*path).lexically_normal();
     // Remove trailing slash, if present.
     return result.has_filename() ? result : result.parent_path();
 }
@@ -324,28 +301,20 @@ std::optional<const ArgsManager::Command> ArgsManager::GetCommand() const
 
 std::vector<std::string> ArgsManager::GetArgs(const std::string& strArg) const
 {
-    std::vector<std::string> result;
-    for (const common::SettingsValue& value : GetSettingsList(strArg)) {
-        result.push_back(value.isFalse() ? "0" : value.isTrue() ? "1" : value.get_str());
-    }
-    return result;
+    return GetSettingsList(strArg);
 }
 
 bool ArgsManager::IsArgSet(const std::string& strArg) const
 {
-    return !GetSetting(strArg).isNull();
+    return GetSetting(strArg).has_value();
 }
 
-common::SettingsValue ArgsManager::GetPersistentSetting(const std::string& name) const
+bool ArgsManager::IsArgDisabled(const std::string& strArg) const
 {
-    LOCK(cs_args);
-    return common::GetSetting(m_settings, m_network, name, !UseDefaultSection("-" + name),
-        /*ignore_nonpersistent=*/true, /*get_chain_type=*/false);
-}
-
-bool ArgsManager::IsArgNegated(const std::string& strArg) const
-{
-    return GetSetting(strArg).isFalse();
+    const auto value = GetSetting(strArg);
+    if (!value) return false;
+    const std::string lower = ToLower(*value);
+    return lower == "0" || lower == "false";
 }
 
 std::string ArgsManager::GetArg(const std::string& strArg, const std::string& strDefault) const
@@ -355,22 +324,17 @@ std::string ArgsManager::GetArg(const std::string& strArg, const std::string& st
 
 std::optional<std::string> ArgsManager::GetArg(const std::string& strArg) const
 {
-    const common::SettingsValue value = GetSetting(strArg);
-    return SettingToString(value);
+    return SettingToString(GetSetting(strArg));
 }
 
-std::optional<std::string> SettingToString(const common::SettingsValue& value)
+std::optional<std::string> SettingToString(const std::optional<std::string>& value)
 {
-    if (value.isNull()) return std::nullopt;
-    if (value.isFalse()) return "0";
-    if (value.isTrue()) return "1";
-    if (value.isNum()) return value.getValStr();
-    return value.get_str();
+    return value;
 }
 
-std::string SettingToString(const common::SettingsValue& value, const std::string& strDefault)
+std::string SettingToString(const std::optional<std::string>& value, const std::string& strDefault)
 {
-    return SettingToString(value).value_or(strDefault);
+    return value ? *value : strDefault;
 }
 
 int64_t ArgsManager::GetIntArg(const std::string& strArg, int64_t nDefault) const
@@ -380,20 +344,16 @@ int64_t ArgsManager::GetIntArg(const std::string& strArg, int64_t nDefault) cons
 
 std::optional<int64_t> ArgsManager::GetIntArg(const std::string& strArg) const
 {
-    const common::SettingsValue value = GetSetting(strArg);
-    return SettingToInt(value);
+    return SettingToInt(GetSetting(strArg));
 }
 
-std::optional<int64_t> SettingToInt(const common::SettingsValue& value)
+std::optional<int64_t> SettingToInt(const std::optional<std::string>& value)
 {
-    if (value.isNull()) return std::nullopt;
-    if (value.isFalse()) return 0;
-    if (value.isTrue()) return 1;
-    if (value.isNum()) return value.getInt<int64_t>();
-    return LocaleIndependentAtoi<int64_t>(value.get_str());
+    if (!value) return std::nullopt;
+    return LocaleIndependentAtoi<int64_t>(*value);
 }
 
-int64_t SettingToInt(const common::SettingsValue& value, int64_t nDefault)
+int64_t SettingToInt(const std::optional<std::string>& value, int64_t nDefault)
 {
     return SettingToInt(value).value_or(nDefault);
 }
@@ -405,18 +365,16 @@ bool ArgsManager::GetBoolArg(const std::string& strArg, bool fDefault) const
 
 std::optional<bool> ArgsManager::GetBoolArg(const std::string& strArg) const
 {
-    const common::SettingsValue value = GetSetting(strArg);
-    return SettingToBool(value);
+    return SettingToBool(GetSetting(strArg));
 }
 
-std::optional<bool> SettingToBool(const common::SettingsValue& value)
+std::optional<bool> SettingToBool(const std::optional<std::string>& value)
 {
-    if (value.isNull()) return std::nullopt;
-    if (value.isBool()) return value.get_bool();
-    return InterpretBool(value.get_str());
+    if (!value) return std::nullopt;
+    return InterpretBool(*value);
 }
 
-bool SettingToBool(const common::SettingsValue& value, bool fDefault)
+bool SettingToBool(const std::optional<std::string>& value, bool fDefault)
 {
     return SettingToBool(value).value_or(fDefault);
 }
@@ -668,11 +626,11 @@ std::variant<ChainType, std::string> ArgsManager::GetChainArg() const
 {
     auto get_net = [&](const std::string& arg) {
         LOCK(cs_args);
-        common::SettingsValue value = common::GetSetting(m_settings, /* section= */ "", SettingName(arg),
+        std::optional<std::string> value = common::GetSetting(m_settings, /* section= */ "", SettingName(arg),
             /* ignore_default_section_config= */ false,
             /*ignore_nonpersistent=*/false,
             /* get_chain_type= */ true);
-        return value.isNull() ? false : value.isBool() ? value.get_bool() : InterpretBool(value.get_str());
+        return value ? InterpretBool(*value) : false;
     };
 
     const bool fRegTest = get_net("-regtest");
@@ -701,7 +659,7 @@ bool ArgsManager::UseDefaultSection(const std::string& arg) const
     return m_network == ChainTypeToString(ChainType::MAIN) || m_network_only_args.count(arg) == 0;
 }
 
-common::SettingsValue ArgsManager::GetSetting(const std::string& arg) const
+std::optional<std::string> ArgsManager::GetSetting(const std::string& arg) const
 {
     LOCK(cs_args);
     return common::GetSetting(
@@ -709,7 +667,7 @@ common::SettingsValue ArgsManager::GetSetting(const std::string& arg) const
         /*ignore_nonpersistent=*/false, /*get_chain_type=*/false);
 }
 
-std::vector<common::SettingsValue> ArgsManager::GetSettingsList(const std::string& arg) const
+std::vector<std::string> ArgsManager::GetSettingsList(const std::string& arg) const
 {
     LOCK(cs_args);
     return common::GetSettingsList(m_settings, m_network, SettingName(arg), !UseDefaultSection(arg));
@@ -718,14 +676,14 @@ std::vector<common::SettingsValue> ArgsManager::GetSettingsList(const std::strin
 void ArgsManager::logArgsPrefix(
     const std::string& prefix,
     const std::string& section,
-    const std::map<std::string, std::vector<common::SettingsValue>>& args) const
+    const std::map<std::string, std::vector<std::string>>& args) const
 {
     std::string section_str = section.empty() ? "" : "[" + section + "] ";
     for (const auto& arg : args) {
         for (const auto& value : arg.second) {
             std::optional<unsigned int> flags = GetArgFlags('-' + arg.first);
             if (flags) {
-                std::string value_str = (*flags & SENSITIVE) ? "****" : value.write();
+                std::string value_str = (*flags & SENSITIVE) ? "****" : value;
                 LogPrintf("%s %s%s=%s\n", prefix, section_str, arg.first, value_str);
             }
         }
@@ -737,9 +695,6 @@ void ArgsManager::LogArgs() const
     LOCK(cs_args);
     for (const auto& section : m_settings.ro_config) {
         logArgsPrefix("Config file arg:", section.first, section.second);
-    }
-    for (const auto& setting : m_settings.rw_settings) {
-        LogPrintf("Setting file arg: %s = %s\n", setting.first, setting.second.write());
     }
     logArgsPrefix("Command-line arg:", "", m_settings.command_line_options);
 }

@@ -145,8 +145,8 @@ std::unique_ptr<T> MakeNoLogFileContext(const ChainType chain_type = ChainType::
 {
     opts.extra_args = Cat(
         {
-            "-nodebuglogfile",
-            "-nodebug",
+            "-debuglogfile=0",
+            "-debug=0",
         },
         opts.extra_args);
 

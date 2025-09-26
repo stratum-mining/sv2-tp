@@ -19,13 +19,13 @@ Specify non\-default Bitcoin Core data directory
 \fB\-conf=\fR<file>
 .IP
 Specify path to the configuration file (default: bitcoin.conf inside the
-datadir). Pass \fB\-noconf\fR to disable loading any configuration file.
+datadir). Set \fB\-conf=0\fR to disable loading any configuration file.
 .HP
 \fB\-debuglogfile=\fR<file>
 .IP
 Specify location of debug log file (default: debug.log). Relative paths
 will be prefixed by a net\-specific datadir location. Pass
-\fB\-nodebuglogfile\fR to disable writing the log to a file.
+set \fB\-debuglogfile=0\fR to disable writing the log to a file.
 .HP
 \fB\-help\fR
 .IP
@@ -51,7 +51,7 @@ Debugging/Testing options:
 .HP
 \fB\-debug=\fR<category>
 .IP
-Output debug and trace logging (default: \fB\-nodebug\fR, supplying <category>
+Output debug and trace logging (default: \fB\-debug=0\fR, supplying <category>
 is optional). If <category> is not supplied or if <category> is 1
 or "all", output all debug logging. If <category> is 0 or "none",
 any other categories are ignored. Other valid values for
@@ -90,7 +90,7 @@ Prepend debug output with timestamp (default: 1)
 \fB\-printtoconsole\fR
 .IP
 Send trace/debug info to console (default: 1). To disable logging to file, set
-\fB\-nodebuglogfile\fR
+\fB\-debuglogfile=0\fR
 .HP
 \fB\-shrinkdebugfile\fR
 .IP

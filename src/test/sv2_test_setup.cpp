@@ -29,7 +29,7 @@ Sv2BasicTestingSetup::Sv2BasicTestingSetup()
     gArgs.ForceSetArg("-datadir", fs::PathToString(m_tmp_root));
 
     // Keep logs in memory via G_TEST_LOG_FUN in main.cpp; avoid file logging noise.
-    gArgs.ForceSetArg("-nodebuglogfile", "1");
+    gArgs.ForceSetArg("-debuglogfile", "0");
 
     // Initialize ECC context needed by key and crypto operations used in tests.
     m_ecc = std::make_unique<ECC_Context>();

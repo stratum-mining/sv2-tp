@@ -134,12 +134,6 @@ endif()
 # semantics as empty strings or strings containing only spaces.
 # Therefore, MATCHES must be used rather than STREQUAL.
 
-if("@usdt_packages@" MATCHES "^[ ]*$")
-  set(WITH_USDT OFF CACHE BOOL "")
-else()
-  set(WITH_USDT ON CACHE BOOL "")
-endif()
-
 set(ipc_packages @ipc_packages@)
 set(MPGEN_EXECUTABLE "${CMAKE_CURRENT_LIST_DIR}/native/bin/mpgen" CACHE FILEPATH "")
 set(CAPNP_EXECUTABLE "${CMAKE_CURRENT_LIST_DIR}/native/bin/capnp" CACHE FILEPATH "")

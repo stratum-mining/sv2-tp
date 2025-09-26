@@ -197,8 +197,8 @@ jobs:
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_arm.sh'
 
-          - name: 'ASan + LSan + UBSan + integer, no depends, USDT'
-            cirrus-runner: 'ghcr.io/cirruslabs/ubuntu-runner-amd64:24.04-lg' # has to match container in ci/test/00_setup_env_native_asan.sh for tracing tools
+          - name: 'ASan + LSan + UBSan + integer, no depends'
+            cirrus-runner: 'ghcr.io/cirruslabs/ubuntu-runner-amd64:24.04-lg'
             fallback-runner: 'ubuntu-24.04'
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_native_asan.sh'
@@ -266,12 +266,6 @@ jobs:
         uses: ./.github/actions/configure-docker
         with:
           use-cirrus: ${{ needs.runners.outputs.use-cirrus-runners }}
-
-      - name: Enable bpfcc script
-        if: ${{ env.CONTAINER_NAME == 'ci_native_asan' }}
-        # In the image build step, no external environment variables are available,
-        # so any settings will need to be written to the settings env file:
-        run: sed -i "s|\${INSTALL_BCC_TRACING_TOOLS}|true|g" ./ci/test/00_setup_env_native_asan.sh
 
       - name: Set mmap_rnd_bits
         if: ${{ env.CONTAINER_NAME == 'ci_native_tsan' || env.CONTAINER_NAME == 'ci_native_msan' }}

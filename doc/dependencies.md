@@ -36,7 +36,6 @@ Bitcoin Core requires one of the following compilers.
 | --- | --- | --- |
 | [Cap'n Proto](../depends/packages/capnp.mk) | [link](https://capnproto.org) | [0.7.1](https://github.com/bitcoin/bitcoin/pull/28907) |
 | Python (scripts, tests) | [link](https://www.python.org) | [3.10](https://github.com/bitcoin/bitcoin/pull/30527) |
-| [systemtap](../depends/packages/systemtap.mk) ([tracing](tracing.md)) | [link](https://sourceware.org/systemtap/) | N/A |
 
 ### Runtime
 

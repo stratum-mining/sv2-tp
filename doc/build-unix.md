@@ -58,10 +58,6 @@ Cap'n Proto is needed for IPC functionality.:
 
     sudo apt-get install libcapnp-dev capnproto
 
-User-Space, Statically Defined Tracing (USDT) dependencies:
-
-    sudo apt install systemtap-sdt-dev
-
 ### Fedora
 
 #### Dependency Build Instructions
@@ -73,10 +69,6 @@ Build requirements:
 Now, you can either build from self-compiled [depends](#dependencies) or install the required dependencies:
 
     sudo dnf install boost-devel
-
-User-Space, Statically Defined Tracing (USDT) dependencies:
-
-    sudo dnf install systemtap-sdt-devel
 
 Cap'n Proto is needed for IPC functionality.:
 
@@ -97,8 +89,6 @@ Now, you can either build from self-compiled [depends](#dependencies) or install
 Cap'n Proto is needed for IPC functionality.:
 
     apk add capnproto capnproto-dev
-
-User-Space, Statically Defined Tracing (USDT) is not supported or tested on Alpine Linux at this time.
 
 ## Dependencies
 

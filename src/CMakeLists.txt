@@ -89,7 +89,6 @@ target_link_libraries(bitcoin_common
     univalue
     secp256k1
     Boost::headers
-    $<TARGET_NAME_IF_EXISTS:USDT::headers>
     $<$<PLATFORM_ID:Windows>:ws2_32>
 )
 

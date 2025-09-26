@@ -10,7 +10,7 @@ export CI_IMAGE_NAME_TAG="mirror.gcr.io/ubuntu:24.04"
 export CONTAINER_NAME=ci_native_tidy
 export TIDY_LLVM_V="20"
 export APT_LLVM_V="${TIDY_LLVM_V}"
-export PACKAGES="clang-${TIDY_LLVM_V} libclang-${TIDY_LLVM_V}-dev llvm-${TIDY_LLVM_V}-dev libomp-${TIDY_LLVM_V}-dev clang-tidy-${TIDY_LLVM_V} jq libboost-dev systemtap-sdt-dev libcapnp-dev capnproto"
+export PACKAGES="clang-${TIDY_LLVM_V} libclang-${TIDY_LLVM_V}-dev llvm-${TIDY_LLVM_V}-dev libomp-${TIDY_LLVM_V}-dev clang-tidy-${TIDY_LLVM_V} jq libboost-dev libcapnp-dev capnproto"
 export NO_DEPENDS=1
 export RUN_UNIT_TESTS=false
 export RUN_FUZZ_TESTS=false
@@ -19,7 +19,6 @@ export RUN_TIDY=true
 export GOAL="install"
 # Wallet support is kept, because check-deps assumes it
 export BITCOIN_CONFIG="\
- -DWITH_USDT=ON \
  -DCMAKE_C_COMPILER=clang-${TIDY_LLVM_V} \
  -DCMAKE_CXX_COMPILER=clang++-${TIDY_LLVM_V} \
  -DCMAKE_C_FLAGS_RELWITHDEBINFO='-O0 -g0' \

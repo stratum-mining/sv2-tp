@@ -63,8 +63,7 @@
       "cacheVariables": {
         "BUILD_FUZZ_BINARY": "ON",
         "BUILD_SHARED_LIBS": "ON",
-        "BUILD_TESTS": "ON",
-        "WITH_USDT": "ON"
+        "BUILD_TESTS": "ON"
       }
     }
   ]

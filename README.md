@@ -30,7 +30,7 @@ Usage
 Download or compile Bitcoin Core v30.0 or later. Start it with:
 
  ```sh
- bitcoin -m node -ipcbind=unix
+ bitcoin node -ipcbind=unix
  ```
 
 Then start the Template Provider, thorough logging is recommended:

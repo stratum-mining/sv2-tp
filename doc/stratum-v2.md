@@ -135,7 +135,7 @@ Using this in a production environment is not yet recommended, but see the testi
 
 See also `sv2-tp --help`.
 
-Start Bitcoin Core with `bitcoin -m node -ipcbind=unix` and then run `sv2-tp` to start a Template Provider server with default settings.
+Start Bitcoin Core with `bitcoin node -ipcbind=unix` and then run `sv2-tp` to start a Template Provider server with default settings.
 The listening port can be changed with `-sv2port`.
 
 By default it only accepts connections from localhost. This can be changed

@@ -106,9 +106,9 @@ include(InstallBinaryComponent)
 if(BUILD_MINE)
   add_executable(sv2-tp
     sv2-tp.cpp
+    sv2-tp.rc
     init/basic.cpp
   )
-  add_windows_resources(sv2-tp sv2-tp.rc)
   add_windows_application_manifest(sv2-tp)
   target_link_libraries(sv2-tp
     core_interface

@@ -244,10 +244,6 @@ if(WIN32)
       /Zc:__cplusplus
       /sdl
     )
-    target_link_options(core_interface INTERFACE
-      # We embed our own manifests.
-      /MANIFEST:NO
-    )
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
       if(CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64")
         set(system_arch_suffix x86_64)

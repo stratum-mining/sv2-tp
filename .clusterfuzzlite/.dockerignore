@@ -1,0 +1,8 @@
+.git
+build/
+build-coverage/
+build_cov/
+build_fuzz/
+coverage-html/
+coverage-out/
+.DS_Store

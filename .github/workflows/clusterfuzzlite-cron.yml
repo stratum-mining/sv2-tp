@@ -1,0 +1,59 @@
+name: ClusterFuzzLite corpus maintenance
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+
+permissions: read-all
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build fuzzers
+        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
+        with:
+          language: c++
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
+          storage-repo-branch: master
+          storage-repo-branch-coverage: gh-pages
+      - name: Prune corpora
+        uses: google/clusterfuzzlite/actions/run_fuzzers@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 600
+          mode: prune
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
+          storage-repo-branch: master
+          storage-repo-branch-coverage: gh-pages
+          output-sarif: true
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build fuzzers (coverage)
+        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
+        with:
+          language: c++
+          sanitizer: coverage
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
+          storage-repo-branch: master
+          storage-repo-branch-coverage: gh-pages
+      - name: Generate coverage report
+        uses: google/clusterfuzzlite/actions/run_fuzzers@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 600
+          mode: coverage
+          sanitizer: coverage
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
+          storage-repo-branch: master
+          storage-repo-branch-coverage: gh-pages
+          output-sarif: true

@@ -21,6 +21,7 @@ jobs:
           storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
           storage-repo-branch: master
           storage-repo-branch-coverage: gh-pages
+          sanitizer: address
       - name: Prune corpora
         uses: google/clusterfuzzlite/actions/run_fuzzers@v1
         with:

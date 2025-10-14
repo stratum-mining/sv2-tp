@@ -18,6 +18,7 @@ jobs:
       matrix:
         sanitizer:
           - address
+          - undefined
     steps:
       - name: Checkout
         uses: actions/checkout@v4

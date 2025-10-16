@@ -56,25 +56,32 @@ if [ "$CUSTOM_LIBCPP" -eq 1 ]; then
   TOOLCHAIN_STAMP_DIR="${CFL_TOOLCHAIN_STAMP_DIR:-/cxx_build}"
   TOOLCHAIN_STAMP="${TOOLCHAIN_STAMP_DIR}/ci.build-instrumented-llvm-${INSTRUMENTED_LIBCPP_MODE}"
   TOOLCHAIN_STAMP_BASENAME="$(basename "$TOOLCHAIN_STAMP")"
-  HOST_TOOLCHAIN_DIR=""
-
-  if [ -n "${GITHUB_WORKSPACE:-}" ]; then
-    HOST_TOOLCHAIN_DIR="${GITHUB_WORKSPACE%/}/cxx_build"
-  fi
-
-  if [ -z "$HOST_TOOLCHAIN_DIR" ] && [ -n "${PROJECT_SRC_PATH:-}" ]; then
-    HOST_TOOLCHAIN_DIR="${PROJECT_SRC_PATH%/}/cxx_build"
-  fi
+  # Allow callers to force a specific cache mount; otherwise probe the common
+  # host locations used by our helper containers and the GitHub Action.
+  HOST_TOOLCHAIN_DIR="${CFL_HOST_TOOLCHAIN_DIR:-}"
 
   if [ -z "$HOST_TOOLCHAIN_DIR" ]; then
-    # ClusterFuzzLite runs under several layouts: full storage clones
-    # (/github/workspace/storage/<repo>), direct checkouts (/github/workspace),
-    # and our helper container (/workspace). Probe each mount so cache reuse
-    # keeps working across all entry points.
-    for candidate in \
-      /github/workspace/storage/sv2-tp/cxx_build \
-      /github/workspace/cxx_build \
-      /workspace/cxx_build; do
+    BASE_PARENT_DIR="$(dirname "${BASE_ROOT_DIR%/}")"
+    CANDIDATE_DIRS=()
+
+    if [ -n "$BASE_PARENT_DIR" ]; then
+      CANDIDATE_DIRS+=("${BASE_PARENT_DIR%/}/cxx_build")
+    fi
+    if [ -n "${GITHUB_WORKSPACE:-}" ]; then
+      CANDIDATE_DIRS+=("${GITHUB_WORKSPACE%/}/cxx_build")
+    fi
+    if [ -n "${PROJECT_SRC_PATH:-}" ]; then
+      CANDIDATE_DIRS+=("${PROJECT_SRC_PATH%/}/cxx_build")
+    fi
+
+    CANDIDATE_DIRS+=(
+      "/workspace/cxx_build"
+      "/github/workspace/cxx_build"
+      "/github/workspace/storage/sv2-tp/cxx_build"
+    )
+
+    for candidate in "${CANDIDATE_DIRS[@]}"; do
+      [ -n "$candidate" ] || continue
       if [ -d "$candidate" ] || [ -f "${candidate}/${TOOLCHAIN_STAMP_BASENAME}" ]; then
         HOST_TOOLCHAIN_DIR="$candidate"
         break

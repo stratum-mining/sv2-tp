@@ -89,6 +89,9 @@ bool Sv2CipherState::DecryptWithAd(std::span<const std::byte> associated_data, s
         LogTrace(BCLog::SV2, "Message decryption failed\n");
         return false;
     }
+#ifdef MEMORY_SANITIZER
+    __msan_unpoison(plain.data(), plain.size());
+#endif
     // Only increase nonce if decryption succeeded
     m_nonce++;
     return true;

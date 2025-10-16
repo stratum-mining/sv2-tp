@@ -45,6 +45,7 @@ void SeedRandomStateForTest(SeedRand seedtype)
         Assert(!g_used_g_prng);       // The global PRNG must not have been used before SeedRandomStateForTest(SeedRand::ZEROS)
     }
     uint256 seed{};
+    seed.SetNull();
     if (seedtype == SeedRand::FIXED_SEED) {
         Assert(g_ctx_seed.has_value());
         seed = *g_ctx_seed;

@@ -51,6 +51,8 @@ void SeedRandomStateForTest(SeedRand seedtype)
         Assert(g_ctx_seed.has_value());
         seed = *g_ctx_seed;
     }
-    LogInfo("Setting random seed for current tests to %s=%s\n", RANDOM_CTX_SEED, seed.GetHex());
+    if (std::getenv("SV2_CLUSTERFUZZLITE") == nullptr) {
+        LogInfo("Setting random seed for current tests to %s=%s\n", RANDOM_CTX_SEED, seed.GetHex());
+    }
     MakeRandDeterministicDANGEROUS(seed);
 }

@@ -313,10 +313,10 @@ c_str_magic=b"$MAGIC_STR"
 with open('./build_fuzz/bin/fuzz','rb') as f:
     dat=f.read()
 dat=dat.replace(c_str_magic, c_str_target + c_str_magic[len(c_str_target):])
-with open("$OUT/${fuzz_target}", 'wb') as g:
+with open("$OUT/${fuzz_target}.bin", 'wb') as g:
     g.write(dat)
 PY
-  chmod +x "$OUT/${fuzz_target}"
+  chmod +x "$OUT/${fuzz_target}.bin"
 
   corpus_dir="assets/fuzz_corpora/${fuzz_target}"
   if [ -d "$corpus_dir" ] && find "$corpus_dir" -type f -print -quit >/dev/null 2>&1; then
@@ -326,6 +326,11 @@ PY
     )
   fi
 
+done
+
+for fuzz_target in "${FUZZ_TARGETS[@]}"; do
+  [ -z "$fuzz_target" ] && continue
+  install -m 0755 ./.clusterfuzzlite/symbolizer-wrapper.sh "$OUT/${fuzz_target}"
 done
 
 if [ "$CUSTOM_LIBCPP" -eq 1 ] && [ -n "$CUSTOM_LIBCPP_LIB_PATH" ]; then

@@ -42,7 +42,7 @@ jobs:
           storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
           storage-repo-branch: master
           storage-repo-branch-coverage: gh-pages
-          # Keep PR fuzzing aligned with longest existing CI job (~8 minutes).
-          fuzz-seconds: 480
+          # Keep PR fuzzing short while iterating on sanitizer toolchain changes.
+          fuzz-seconds: 60
           mode: code-change
           output-sarif: true

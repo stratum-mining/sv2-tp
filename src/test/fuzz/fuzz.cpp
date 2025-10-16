@@ -33,6 +33,16 @@
 #include <utility>
 #include <vector>
 
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer)
+#define MEMORY_SANITIZER 1
+#endif
+#endif
+
+#ifdef MEMORY_SANITIZER
+#include <sanitizer/msan_interface.h>
+#endif
+
 #if defined(PROVIDE_FUZZ_MAIN_FUNCTION) && defined(__AFL_FUZZ_INIT)
 __AFL_FUZZ_INIT();
 #endif

@@ -11,6 +11,9 @@
 #include <secp256k1_extrakeys.h>
 #include <secp256k1_recovery.h>
 #include <secp256k1_schnorrsig.h>
+#ifdef MEMORY_SANITIZER
+#include <sanitizer/msan_interface.h>
+#endif
 #include <span.h>
 #include <uint256.h>
 #include <util/strencodings.h>
@@ -375,6 +378,9 @@ CPubKey EllSwiftPubKey::Decode() const
 
     secp256k1_ec_pubkey_serialize(secp256k1_context_static, vch_bytes.data(), &sz, &pubkey, SECP256K1_EC_COMPRESSED);
     assert(sz == vch_bytes.size());
+#ifdef MEMORY_SANITIZER
+    __msan_unpoison(vch_bytes.data(), vch_bytes.size());
+#endif
 
     return CPubKey{vch_bytes.begin(), vch_bytes.end()};
 }

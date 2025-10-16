@@ -69,6 +69,8 @@ jobs:
           storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
           storage-repo-branch: master
           storage-repo-branch-coverage: gh-pages
+        env:
+          SKIP_CFL_SETUP: ${{ inputs.run_base_install || inputs.run_toolchain }}
 
       - name: Run fuzzers (${{ matrix.sanitizer }})
         if: ${{ inputs.run_fuzzers }}

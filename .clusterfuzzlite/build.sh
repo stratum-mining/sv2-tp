@@ -19,6 +19,7 @@ export APT_LLVM_V="${APT_LLVM_V:-21}"
 SANITIZER_CHOICE="${SANITIZER:-address}"
 CUSTOM_LIBCPP=0
 INSTRUMENTED_LIBCPP_MODE=""
+SKIP_CFL_SETUP_FLAG="${SKIP_CFL_SETUP:-false}"
 
 # shellcheck source=ci/test/cfl-common.sh
 source ./ci/test/cfl-common.sh
@@ -93,7 +94,11 @@ if [ "$CUSTOM_LIBCPP" -eq 1 ]; then
   unset USE_INSTRUMENTED_LIBCPP || true
 fi
 
-./ci/test/01_base_install.sh
+if [ "$SKIP_CFL_SETUP_FLAG" = "true" ] && [ -f "${BASE_ROOT_DIR}/ci.base-install-done" ]; then
+  echo "Skipping base install (already performed upstream)."
+else
+  ./ci/test/01_base_install.sh
+fi
 
 if [ "$CUSTOM_LIBCPP" -eq 1 ]; then
   unset SKIP_LIBCPP_RUNTIME_BUILD || true
@@ -104,6 +109,9 @@ if [ "$CUSTOM_LIBCPP" -eq 1 ]; then
       cp -a "${TOOLCHAIN_STAMP_DIR}/." "$HOST_TOOLCHAIN_DIR/"
     fi
   else
+    if [ "$SKIP_CFL_SETUP_FLAG" = "true" ]; then
+      echo "Using prebuilt instrumented toolchain for mode '$INSTRUMENTED_LIBCPP_MODE'."
+    fi
     export USE_INSTRUMENTED_LIBCPP="$INSTRUMENTED_LIBCPP_MODE"
   fi
 fi

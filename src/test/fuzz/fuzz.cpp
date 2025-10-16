@@ -40,6 +40,13 @@ extern const std::function<void(const std::string&)> G_TEST_LOG_FUN{};
 
 const TranslateFn G_TRANSLATION_FUN{nullptr};
 
+// The instrumented toolchain we ship to ClusterFuzzLite runners lacks the MSan
+// interceptors that unpoison getenv() results, so avoid logging those strings.
+static bool RunningUnderClusterFuzzLite()
+{
+    return std::getenv("SV2_CLUSTERFUZZLITE") != nullptr;
+}
+
 /**
  * A copy of the command line arguments that start with `--`.
  * First `LLVMFuzzerInitialize()` is called, which saves the arguments to `g_args`.
@@ -91,7 +98,6 @@ void FuzzFrameworkRegisterTarget(std::string_view name, TypeTestOneInput target,
 
 static std::string_view g_fuzz_target;
 static const TypeTestOneInput* g_test_one_input{nullptr};
-
 static void test_one_input(FuzzBufferType buffer)
 {
     (*Assert(g_test_one_input))(buffer);
@@ -133,7 +139,9 @@ static void initialize()
         should_exit = true;
     }
     if (const char* out_path = std::getenv("WRITE_ALL_FUZZ_TARGETS_AND_ABORT")) {
-        std::cout << "Writing all fuzz target names to '" << out_path << "'." << std::endl;
+        if (!RunningUnderClusterFuzzLite()) {
+            std::cout << "Writing all fuzz target names to '" << out_path << "'." << std::endl;
+        }
         std::ofstream out_stream{out_path, std::ios::binary};
         for (const auto& [name, t] : FuzzTargets()) {
             if (t.opts.hidden) continue;
@@ -282,7 +290,9 @@ int main(int argc, char** argv)
         }
     }
     const auto end_time{Now<SteadySeconds>()};
-    std::cout << g_fuzz_target << ": succeeded against " << tested << " files in " << count_seconds(end_time - start_time) << "s." << std::endl;
+    if (!RunningUnderClusterFuzzLite()) {
+        std::cout << g_fuzz_target << ": succeeded against " << tested << " files in " << count_seconds(end_time - start_time) << "s." << std::endl;
+    }
 #endif
     return 0;
 }

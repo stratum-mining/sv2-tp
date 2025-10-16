@@ -11,6 +11,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 
 std::atomic<bool> g_seeded_g_prng_zero{false};
 

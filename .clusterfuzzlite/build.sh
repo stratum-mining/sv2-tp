@@ -7,6 +7,8 @@ date
 
 cd "$SRC/sv2-tp"
 
+export SV2_CLUSTERFUZZLITE=1
+
 # Reuse a repository-local cache by default so helper runs can share state with
 # the workflow containers. Callers may override BASE_ROOT_DIR explicitly.
 BASE_ROOT_DIR="${BASE_ROOT_DIR:-${PWD}/.cfl-base}"

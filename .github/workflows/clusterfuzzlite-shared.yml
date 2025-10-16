@@ -1,0 +1,84 @@
+name: ClusterFuzzLite shared job
+
+on:
+  workflow_call:
+    inputs:
+      job_name:
+        type: string
+        default: ClusterFuzzLite
+      sanitizers_json:
+        type: string
+        default: '{"sanitizer":["address","undefined","memory"]}'
+      run_fuzzers:
+        type: boolean
+        default: true
+      run_mode:
+        type: string
+        default: code-change
+      fuzz_seconds:
+        type: number
+        default: 60
+      output_sarif:
+        type: boolean
+        default: false
+      upload_build:
+        type: boolean
+        default: false
+      run_base_install:
+        type: boolean
+        default: true
+      run_toolchain:
+        type: boolean
+        default: true
+
+permissions: read-all
+
+jobs:
+  fuzz:
+    name: ${{ inputs.job_name }} (${{ matrix.sanitizer }})
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.ref }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(inputs.sanitizers_json) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ClusterFuzzLite base install (${{ matrix.sanitizer }})
+        if: ${{ inputs.run_base_install }}
+        run: ./ci/test/run-cfl-helper.sh base-install "${{ matrix.sanitizer }}"
+        shell: bash
+
+      - name: Build instrumented LLVM toolchain (${{ matrix.sanitizer }})
+        if: ${{ inputs.run_toolchain }}
+        run: ./ci/test/run-cfl-helper.sh build-toolchain "${{ matrix.sanitizer }}"
+        shell: bash
+
+      - name: Build fuzzers (${{ matrix.sanitizer }})
+        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
+        with:
+          language: c++
+          sanitizer: ${{ matrix.sanitizer }}
+          upload-build: ${{ inputs.upload_build }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
+          storage-repo-branch: master
+          storage-repo-branch-coverage: gh-pages
+
+      - name: Run fuzzers (${{ matrix.sanitizer }})
+        if: ${{ inputs.run_fuzzers }}
+        uses: google/clusterfuzzlite/actions/run_fuzzers@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          sanitizer: ${{ matrix.sanitizer }}
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
+          storage-repo-branch: master
+          storage-repo-branch-coverage: gh-pages
+          fuzz-seconds: ${{ inputs.fuzz_seconds }}
+          mode: ${{ inputs.run_mode }}
+          output-sarif: ${{ inputs.output_sarif }}

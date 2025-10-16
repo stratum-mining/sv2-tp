@@ -8,67 +8,19 @@ permissions: read-all
 
 jobs:
   prune:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        sanitizer:
-          - address
-          - undefined
-          - memory
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: ClusterFuzzLite base install (${{ matrix.sanitizer }})
-        run: ./ci/test/run-cfl-helper.sh base-install "${{ matrix.sanitizer }}"
-        shell: bash
-      - name: Build instrumented LLVM toolchain (${{ matrix.sanitizer }})
-        run: ./ci/test/run-cfl-helper.sh build-toolchain "${{ matrix.sanitizer }}"
-        shell: bash
-      - name: Build fuzzers
-        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
-        with:
-          language: c++
-          sanitizer: ${{ matrix.sanitizer }}
-          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
-          storage-repo-branch: master
-          storage-repo-branch-coverage: gh-pages
-      - name: Prune corpora
-        uses: google/clusterfuzzlite/actions/run_fuzzers@v1
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          fuzz-seconds: 600
-          mode: prune
-          sanitizer: ${{ matrix.sanitizer }}
-          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
-          storage-repo-branch: master
-          storage-repo-branch-coverage: gh-pages
-          output-sarif: true
+    uses: ./.github/workflows/clusterfuzzlite-shared.yml
+    with:
+      job_name: Corpus prune
+      run_mode: prune
+      fuzz_seconds: 600
+      output_sarif: true
   coverage:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Build fuzzers (coverage)
-        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
-        with:
-          language: c++
-          sanitizer: coverage
-          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
-          storage-repo-branch: master
-          storage-repo-branch-coverage: gh-pages
-      - name: Generate coverage report
-        uses: google/clusterfuzzlite/actions/run_fuzzers@v1
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          fuzz-seconds: 600
-          mode: coverage
-          sanitizer: coverage
-          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
-          storage-repo-branch: master
-          storage-repo-branch-coverage: gh-pages
-          output-sarif: true
+    uses: ./.github/workflows/clusterfuzzlite-shared.yml
+    with:
+      job_name: Coverage
+      sanitizers_json: '{"sanitizer":["coverage"]}'
+      run_base_install: false
+      run_toolchain: false
+      run_mode: coverage
+      fuzz_seconds: 600
+      output_sarif: true

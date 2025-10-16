@@ -9,46 +9,10 @@ permissions: read-all
 
 jobs:
   pr:
-    runs-on: ubuntu-latest
-    concurrency:
-      group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.ref }}
-      cancel-in-progress: true
-    strategy:
-      fail-fast: false
-      matrix:
-        sanitizer:
-          - address
-          - undefined
-          - memory
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: ClusterFuzzLite base install (${{ matrix.sanitizer }})
-        run: ./ci/test/run-cfl-helper.sh base-install "${{ matrix.sanitizer }}"
-        shell: bash
-      - name: Build instrumented LLVM toolchain (${{ matrix.sanitizer }})
-        run: ./ci/test/run-cfl-helper.sh build-toolchain "${{ matrix.sanitizer }}"
-        shell: bash
-      - name: Build fuzzers (${{ matrix.sanitizer }})
-        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
-        with:
-          language: c++
-          sanitizer: ${{ matrix.sanitizer }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
-          storage-repo-branch: master
-          storage-repo-branch-coverage: gh-pages
-      - name: Run fuzzers (${{ matrix.sanitizer }})
-        uses: google/clusterfuzzlite/actions/run_fuzzers@v1
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          sanitizer: ${{ matrix.sanitizer }}
-          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
-          storage-repo-branch: master
-          storage-repo-branch-coverage: gh-pages
-          # Keep PR fuzzing short while iterating on sanitizer toolchain changes.
-          fuzz-seconds: 60
-          mode: code-change
-          output-sarif: true
+    uses: ./.github/workflows/clusterfuzzlite-shared.yml
+    with:
+      job_name: PR fuzzing
+      run_mode: code-change
+      # Keep PR fuzzing short while iterating on sanitizer toolchain changes.
+      fuzz_seconds: 60
+      output_sarif: true

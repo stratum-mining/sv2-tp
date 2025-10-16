@@ -9,34 +9,8 @@ permissions: read-all
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    concurrency:
-      group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.ref }}
-      cancel-in-progress: true
-    strategy:
-      fail-fast: false
-      matrix:
-        sanitizer:
-          - address
-          - undefined
-          - memory
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: ClusterFuzzLite base install (${{ matrix.sanitizer }})
-        run: ./ci/test/run-cfl-helper.sh base-install "${{ matrix.sanitizer }}"
-        shell: bash
-      - name: Build instrumented LLVM toolchain (${{ matrix.sanitizer }})
-        run: ./ci/test/run-cfl-helper.sh build-toolchain "${{ matrix.sanitizer }}"
-        shell: bash
-      - name: Build fuzzers (${{ matrix.sanitizer }})
-        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
-        with:
-          language: c++
-          sanitizer: ${{ matrix.sanitizer }}
-          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/Sjors/sv2-tp-fuzz-storage.git
-          storage-repo-branch: master
-          storage-repo-branch-coverage: gh-pages
-          upload-build: true
+    uses: ./.github/workflows/clusterfuzzlite-shared.yml
+    with:
+      job_name: Continuous build
+      run_fuzzers: false
+      upload_build: true

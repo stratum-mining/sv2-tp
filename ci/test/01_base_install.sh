@@ -17,6 +17,11 @@ fi
 
 MAKEJOBS="-j$( nproc )"  # Use nproc, because MAKEJOBS is the default in docker image builds.
 
+LLVM_RUNTIMES="libcxx;libcxxabi;libunwind"
+if [ -n "${USE_INSTRUMENTED_LIBCPP}" ]; then
+  LLVM_RUNTIMES="compiler-rt;${LLVM_RUNTIMES}"
+fi
+
 if [ -n "$DPKG_ADD_ARCH" ]; then
   dpkg --add-architecture "$DPKG_ADD_ARCH"
 fi
@@ -55,11 +60,11 @@ if [ -n "$PIP_PACKAGES" ]; then
   ${CI_RETRY_EXE} pip3 install --user $PIP_PACKAGES
 fi
 
-if [[ -n "${USE_INSTRUMENTED_LIBCPP}" ]]; then
-  ${CI_RETRY_EXE} git clone --depth=1 https://github.com/llvm/llvm-project -b "llvmorg-21.1.1" /llvm-project
+if [[ -n "${USE_INSTRUMENTED_LIBCPP}" && "${SKIP_LIBCPP_RUNTIME_BUILD:-0}" != "1" ]]; then
+  ${CI_RETRY_EXE} git clone --depth=1 https://github.com/llvm/llvm-project -b "llvmorg-21.1.3" /llvm-project
 
   cmake -G Ninja -B /cxx_build/ \
-    -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" \
+    -DLLVM_ENABLE_RUNTIMES="${LLVM_RUNTIMES}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_USE_SANITIZER="${USE_INSTRUMENTED_LIBCPP}" \
     -DCMAKE_C_COMPILER=clang \
@@ -69,6 +74,8 @@ if [[ -n "${USE_INSTRUMENTED_LIBCPP}" ]]; then
     -DLIBCXXABI_USE_LLVM_UNWINDER=OFF \
     -DLIBCXX_ABI_DEFINES="_LIBCPP_ABI_BOUNDED_ITERATORS;_LIBCPP_ABI_BOUNDED_ITERATORS_IN_STD_ARRAY;_LIBCPP_ABI_BOUNDED_ITERATORS_IN_STRING;_LIBCPP_ABI_BOUNDED_ITERATORS_IN_VECTOR;_LIBCPP_ABI_BOUNDED_UNIQUE_PTR" \
     -DLIBCXX_HARDENING_MODE=debug \
+    -DCOMPILER_RT_BUILD_LIBFUZZER=ON \
+    -DCOMPILER_RT_INCLUDE_TESTS=OFF \
     -S /llvm-project/runtimes
 
   ninja -C /cxx_build/ "$MAKEJOBS"

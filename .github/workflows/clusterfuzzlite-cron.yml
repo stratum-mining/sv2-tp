@@ -21,6 +21,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: ClusterFuzzLite base install (${{ matrix.sanitizer }})
+        run: ./ci/test/run-cfl-helper.sh base-install "${{ matrix.sanitizer }}"
+        shell: bash
+      - name: Build instrumented LLVM toolchain (${{ matrix.sanitizer }})
+        run: ./ci/test/run-cfl-helper.sh build-toolchain "${{ matrix.sanitizer }}"
+        shell: bash
       - name: Build fuzzers
         uses: google/clusterfuzzlite/actions/build_fuzzers@v1
         with:

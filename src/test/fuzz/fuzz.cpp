@@ -139,14 +139,8 @@ static void initialize()
     const char* env_fuzz{std::getenv("FUZZ")};
     const bool listing_mode{std::getenv("PRINT_ALL_FUZZ_TARGETS_AND_ABORT") != nullptr ||
                             std::getenv("WRITE_ALL_FUZZ_TARGETS_AND_ABORT") != nullptr};
-    bool using_placeholder{false};
     static std::string g_copy;
-    g_copy.assign(env_fuzz != nullptr ? env_fuzz : "");
-
-    if (g_copy.empty()) {
-        g_copy.assign(FuzzTargetPlaceholder);
-        using_placeholder = true;
-    }
+    g_copy.assign((env_fuzz != nullptr && env_fuzz[0] != '\0') ? env_fuzz : FuzzTargetPlaceholder);
     g_fuzz_target = g_copy.c_str();
 
     bool should_exit{false};
@@ -173,14 +167,14 @@ static void initialize()
         std::exit(EXIT_SUCCESS);
     }
 
-    if (using_placeholder && !listing_mode) {
-        std::cerr << "Must select fuzz target with the FUZZ env var." << std::endl;
-        std::cerr << "Hint: Set the PRINT_ALL_FUZZ_TARGETS_AND_ABORT=1 env var to see all compiled targets." << std::endl;
-        std::exit(EXIT_FAILURE);
-    }
     const auto it = FuzzTargets().find(g_fuzz_target);
     if (it == FuzzTargets().end()) {
-        std::cerr << "No fuzz target compiled for " << g_fuzz_target << "." << std::endl;
+        if (!listing_mode && (env_fuzz == nullptr || env_fuzz[0] == '\0')) {
+            std::cerr << "Must select fuzz target with the FUZZ env var." << std::endl;
+            std::cerr << "Hint: Set the PRINT_ALL_FUZZ_TARGETS_AND_ABORT=1 env var to see all compiled targets." << std::endl;
+        } else {
+            std::cerr << "No fuzz target compiled for " << g_fuzz_target << "." << std::endl;
+        }
         std::exit(EXIT_FAILURE);
     }
     if constexpr (!G_FUZZING_BUILD && !G_ABORT_ON_FAILED_ASSUME) {

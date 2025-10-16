@@ -261,6 +261,7 @@ fi
     HOST=$BUILD_TRIPLET \
     DEBUG=1 \
     NO_IPC=1 \
+    LOG=1 \
     CC=clang \
     CXX=clang++ \
     CFLAGS="$CFLAGS" \

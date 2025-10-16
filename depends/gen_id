@@ -9,9 +9,10 @@
 # depends/Makefile as a build id for caching purposes (detecting when the
 # toolset has changed and the cache needs to be invalidated).
 #
-# If the DEBUG environment variable is non-empty and the system has `tee`
-# available in its $PATH, the pre-image to the SHA256 hash will be printed to
-# stderr. This is to help developers debug caching issues in depends.
+# If the DEBUG environment variable is non-empty (or DEPENDS_LOG_VERBOSE is set)
+# and the system has `tee` available in its $PATH, the pre-image to the SHA256
+# hash will be printed to stderr. This is to help developers debug caching
+# issues in depends.
 
 # This script explicitly does not `set -e` because id determination is mostly
 # opportunistic: it is fine that things fail, as long as they fail consistently.
@@ -94,11 +95,20 @@
     echo "END LTO"
 
     echo "END ALL"
-) | if [ -n "${DEPENDS_LOG_VERBOSE:-$DEBUG}" ] && command -v tee > /dev/null 2>&1; then
+) | {
+    verbose_flag=""
+    if [ "${DEPENDS_LOG_VERBOSE+set}" = set ]; then
+        verbose_flag="${DEPENDS_LOG_VERBOSE}"
+    else
+        verbose_flag="${DEBUG:-}"
+    fi
+
+    if [ -n "${verbose_flag}" ] && command -v tee > /dev/null 2>&1; then
         # When debugging and `tee` is available, output the preimage to stderr
         # in addition to passing through stdin to stdout
         tee >(cat 1>&2)
     else
         # Otherwise, passthrough stdin to stdout
         cat
-    fi | ${SHA256SUM} - | cut -d' ' -f1
+    fi
+} | ${SHA256SUM} - | cut -d' ' -f1

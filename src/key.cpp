@@ -10,6 +10,10 @@
 #include <hash.h>
 #include <random.h>
 
+#ifdef MEMORY_SANITIZER
+#include <sanitizer/msan_interface.h>
+#endif
+
 #include <secp256k1.h>
 #include <secp256k1_ellswift.h>
 #include <secp256k1_extrakeys.h>
@@ -321,6 +325,9 @@ EllSwiftPubKey CKey::EllSwiftCreate(std::span<const std::byte> ent32) const
 
     // Should always succeed for valid keys (asserted above).
     assert(success);
+#ifdef MEMORY_SANITIZER
+    __msan_unpoison(encoded_pubkey.data(), encoded_pubkey.size());
+#endif
     return {encoded_pubkey};
 }
 
@@ -341,6 +348,9 @@ ECDHSecret CKey::ComputeBIP324ECDHSecret(const EllSwiftPubKey& their_ellswift, c
                                           nullptr);
     // Should always succeed for valid keys (assert above).
     assert(success);
+#ifdef MEMORY_SANITIZER
+    __msan_unpoison(output.data(), output.size());
+#endif
     return output;
 }
 

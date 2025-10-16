@@ -47,6 +47,8 @@ static bool RunningUnderClusterFuzzLite()
     return std::getenv("SV2_CLUSTERFUZZLITE") != nullptr;
 }
 
+static constexpr char FuzzTargetPlaceholder[] = "d6f1a2b39c4e5d7a8b9c0d1e2f30415263748596a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00fedcba9876543210a0b1c2d3";
+
 /**
  * A copy of the command line arguments that start with `--`.
  * First `LLVMFuzzerInitialize()` is called, which saves the arguments to `g_args`.
@@ -130,6 +132,20 @@ static void initialize()
         return WrappedGetAddrInfo(name, false);
     };
 
+    const char* env_fuzz{std::getenv("FUZZ")};
+    const bool listing_mode{std::getenv("PRINT_ALL_FUZZ_TARGETS_AND_ABORT") != nullptr ||
+                            std::getenv("WRITE_ALL_FUZZ_TARGETS_AND_ABORT") != nullptr};
+    bool using_placeholder{false};
+    if (env_fuzz == nullptr || env_fuzz[0] == '\0') {
+        env_fuzz = FuzzTargetPlaceholder;
+        using_placeholder = true;
+    }
+
+    // To allow for easier fuzz executable binary modification, create a copy that keeps the
+    // placeholder string in the binary so the build script can patch it for each harness.
+    static std::string g_copy{env_fuzz};
+    g_fuzz_target = g_copy.c_str();
+
     bool should_exit{false};
     if (std::getenv("PRINT_ALL_FUZZ_TARGETS_AND_ABORT")) {
         for (const auto& [name, t] : FuzzTargets()) {
@@ -152,11 +168,8 @@ static void initialize()
     if (should_exit) {
         std::exit(EXIT_SUCCESS);
     }
-    if (const auto* env_fuzz{std::getenv("FUZZ")}) {
-        // To allow for easier fuzz executable binary modification,
-        static std::string g_copy{env_fuzz}; // create copy to avoid compiler optimizations, and
-        g_fuzz_target = g_copy.c_str();      // strip string after the first null-char.
-    } else {
+
+    if (using_placeholder && !listing_mode) {
         std::cerr << "Must select fuzz target with the FUZZ env var." << std::endl;
         std::cerr << "Hint: Set the PRINT_ALL_FUZZ_TARGETS_AND_ABORT=1 env var to see all compiled targets." << std::endl;
         std::exit(EXIT_FAILURE);

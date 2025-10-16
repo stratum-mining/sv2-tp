@@ -44,7 +44,11 @@ void SeedRandomStateForTest(SeedRand seedtype)
         Assert(g_seeded_g_prng_zero); // Only SeedRandomStateForTest(SeedRand::ZEROS) is allowed in fuzz tests
         Assert(!g_used_g_prng);       // The global PRNG must not have been used before SeedRandomStateForTest(SeedRand::ZEROS)
     }
-    const uint256& seed{seedtype == SeedRand::FIXED_SEED ? g_ctx_seed.value() : uint256::ZERO};
+    uint256 seed{};
+    if (seedtype == SeedRand::FIXED_SEED) {
+        Assert(g_ctx_seed.has_value());
+        seed = *g_ctx_seed;
+    }
     LogInfo("Setting random seed for current tests to %s=%s\n", RANDOM_CTX_SEED, seed.GetHex());
     MakeRandDeterministicDANGEROUS(seed);
 }

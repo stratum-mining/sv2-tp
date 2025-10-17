@@ -5,7 +5,9 @@
 #ifndef BITCOIN_UTIL_SANITIZER_H
 #define BITCOIN_UTIL_SANITIZER_H
 
+#include <cstddef>
 #include <cstdlib>
+#include <type_traits>
 
 #if defined(__has_feature)
 #  if __has_feature(memory_sanitizer)
@@ -35,6 +37,32 @@ inline void Unpoison(const T& value)
     __msan_unpoison(const_cast<void*>(static_cast<const void*>(&value)), sizeof(T));
 #else
     (void)value;
+#endif
+}
+
+inline void UnpoisonMemory(const void* addr, std::size_t size)
+{
+#if defined(BITCOIN_HAVE_MEMORY_SANITIZER)
+    if (addr != nullptr && size != 0) {
+        __msan_unpoison(const_cast<void*>(addr), size);
+    }
+#else
+    (void)addr;
+    (void)size;
+#endif
+}
+
+template <typename T>
+inline void UnpoisonArray(T* data, std::size_t count)
+{
+#if defined(BITCOIN_HAVE_MEMORY_SANITIZER)
+    if (data != nullptr && count != 0) {
+        using NonConstT = typename std::remove_const<T>::type;
+        __msan_unpoison(const_cast<NonConstT*>(data), sizeof(T) * count);
+    }
+#else
+    (void)data;
+    (void)count;
 #endif
 }
 

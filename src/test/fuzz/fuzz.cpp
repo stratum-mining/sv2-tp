@@ -30,6 +30,7 @@
 #include <memory>
 #include <random>
 #include <string>
+#include <system_error>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -54,7 +55,9 @@ const TranslateFn G_TRANSLATION_FUN{nullptr};
 
 using util::sanitizer::GetEnvUnpoisoned;
 using util::sanitizer::Unpoison;
+using util::sanitizer::UnpoisonArray;
 using util::sanitizer::UnpoisonCString;
+using util::sanitizer::UnpoisonMemory;
 
 // The instrumented toolchain we ship to ClusterFuzzLite runners lacks the MSan
 // interceptors that unpoison getenv() results, so avoid logging those strings.
@@ -95,17 +98,35 @@ static void MaybeConfigureSymbolizer(const char* argv0)
     // Currently only auto-configure when running under ClusterFuzzLite; other
     // environments can export these variables themselves if desired.
     if (!RunningUnderClusterFuzzLite()) return;
-    if (argv0 == nullptr) return;
     if (GetEnvUnpoisoned("LLVM_SYMBOLIZER_PATH") != nullptr) return;
 
     try {
-        Unpoison(argv0);
-        UnpoisonCString(argv0);
-        fs::path exe_path{argv0};
-        if (exe_path.empty()) return;
-        if (!exe_path.is_absolute()) {
-            exe_path = fs::weakly_canonical(fs::path{fs::current_path()} / exe_path);
+        fs::path exe_path;
+        bool have_exe_path{false};
+
+#if defined(__linux__)
+        {
+            std::error_code proc_ec;
+            fs::path proc_exe{fs::read_symlink("/proc/self/exe", proc_ec)};
+            if (!proc_ec && !proc_exe.empty()) {
+                exe_path = fs::weakly_canonical(proc_exe);
+                have_exe_path = !exe_path.empty();
+            }
         }
+#endif
+
+        if (!have_exe_path) {
+            if (argv0 == nullptr) return;
+            Unpoison(argv0);
+            UnpoisonCString(argv0);
+            fs::path candidate{argv0};
+            if (candidate.empty()) return;
+            if (!candidate.is_absolute()) {
+                candidate = fs::weakly_canonical(fs::path{fs::current_path()} / candidate);
+            }
+            exe_path = std::move(candidate);
+        }
+
         fs::path symbolizer_path{exe_path.parent_path()};
         symbolizer_path /= "llvm-symbolizer";
         if (!fs::exists(symbolizer_path) || !fs::is_regular_file(symbolizer_path)) return;
@@ -128,8 +149,10 @@ static constexpr char FuzzTargetPlaceholder[] = "d6f1a2b39c4e5d7a8b9c0d1e2f30415
 static std::vector<const char*> g_args;
 
 static void SetArgs(int argc, char** argv) {
-    Unpoison(argv);
+    if (argv == nullptr || argc <= 0) return;
+    UnpoisonArray(argv, static_cast<std::size_t>(argc));
     for (int i = 1; i < argc; ++i) {
+        if (argv[i] == nullptr) continue;
         Unpoison(argv[i]);
         UnpoisonCString(argv[i]);
         // Only take into account arguments that start with `--`. The others are for the fuzz engine:
@@ -327,22 +350,27 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 // This function is used by libFuzzer
 extern "C" int LLVMFuzzerInitialize(int* argc, char*** argv)
 {
+    int arg_count{0};
     if (argc != nullptr) {
-        Unpoison(argc);
-        Unpoison(*argc);
+        util::sanitizer::UnpoisonMemory(argc, sizeof(*argc));
+        arg_count = *argc;
     }
+
+    char** argv_values{nullptr};
     if (argv != nullptr) {
-        Unpoison(argv);
-        if (*argv != nullptr) {
-            Unpoison(*argv);
+        util::sanitizer::UnpoisonMemory(argv, sizeof(*argv));
+        argv_values = *argv;
+        if (argv_values != nullptr && arg_count > 0) {
+            UnpoisonArray(argv_values, static_cast<std::size_t>(arg_count));
         }
     }
+
     // Some environments call LLVMFuzzerInitialize with null argv pointers; guard before
     // we try to derive the executable path for symbolizer discovery.
-    if (argv != nullptr && *argv != nullptr && (*argv)[0] != nullptr) {
-        MaybeConfigureSymbolizer((*argv)[0]);
+    if (argv_values != nullptr && arg_count > 0 && argv_values[0] != nullptr) {
+        MaybeConfigureSymbolizer(argv_values[0]);
     }
-    SetArgs(*argc, *argv);
+    SetArgs(arg_count, argv_values);
     initialize();
     return 0;
 }
@@ -350,10 +378,9 @@ extern "C" int LLVMFuzzerInitialize(int* argc, char*** argv)
 #if defined(PROVIDE_FUZZ_MAIN_FUNCTION)
 int main(int argc, char** argv)
 {
-    Unpoison(&argc);
-    Unpoison(argc);
-    Unpoison(&argv);
-    Unpoison(argv);
+    if (argv != nullptr && argc > 0) {
+        UnpoisonArray(argv, static_cast<std::size_t>(argc));
+    }
     // Standalone execution also defends against missing argv entries before probing paths.
     if (argv != nullptr && argv[0] != nullptr) {
         MaybeConfigureSymbolizer(argv[0]);

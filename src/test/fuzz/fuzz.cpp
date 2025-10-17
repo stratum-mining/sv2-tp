@@ -168,9 +168,11 @@ static void MaybeConfigureSymbolizer(const char* argv0)
         if (exe_string.empty()) return;
 
         std::string symbolizer_string;
+        const auto last_slash{exe_string.find_last_of('/')};
         const auto last_sep{exe_string.find_last_of(fs::path::preferred_separator)};
-        if (last_sep != std::string::npos) {
-            symbolizer_string.assign(exe_string.data(), last_sep + 1);
+        const auto sep_index{std::max(last_slash, last_sep)};
+        if (sep_index != std::string::npos) {
+            symbolizer_string.assign(exe_string.data(), sep_index + 1);
         } else {
             symbolizer_string.assign("./");
         }

@@ -73,7 +73,7 @@ jobs:
             ${{ format('cfl-ccache-{0}-{1}-', runner.os, matrix.sanitizer) }}
 
       - name: ClusterFuzzLite base install (${{ matrix.sanitizer }})
-        if: ${{ inputs.run_base_install }}
+        if: ${{ inputs.run_base_install && !inputs.run_toolchain }}
         run: ./ci/test/run-cfl-helper.sh base-install "${{ matrix.sanitizer }}"
         shell: bash
         env:

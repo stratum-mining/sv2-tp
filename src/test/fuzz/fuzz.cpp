@@ -115,8 +115,11 @@ static void MaybeConfigureSymbolizer(const char* argv0)
             const ssize_t read_bytes{::readlink("/proc/self/exe", proc_exe.data(), proc_exe.size() - 1)};
             if (read_bytes > 0 && static_cast<std::size_t>(read_bytes) < proc_exe.size()) {
                 proc_exe[static_cast<std::size_t>(read_bytes)] = '\0';
-                exe_path = fs::weakly_canonical(fs::path{proc_exe.data()});
-                have_exe_path = !exe_path.empty();
+                exe_path = fs::path{proc_exe.data()};
+                if (!exe_path.empty()) {
+                    exe_path = exe_path.lexically_normal();
+                    have_exe_path = exe_path.is_absolute();
+                }
             }
         }
 #endif
@@ -128,9 +131,14 @@ static void MaybeConfigureSymbolizer(const char* argv0)
             fs::path candidate{argv0};
             if (candidate.empty()) return;
             if (!candidate.is_absolute()) {
-                candidate = fs::weakly_canonical(fs::path{fs::current_path()} / candidate);
+                fs::path resolved{fs::current_path()};
+                resolved /= candidate;
+                candidate = resolved.lexically_normal();
+            } else {
+                candidate = candidate.lexically_normal();
             }
             exe_path = std::move(candidate);
+            have_exe_path = exe_path.is_absolute();
         }
 
         fs::path symbolizer_path{exe_path.parent_path()};

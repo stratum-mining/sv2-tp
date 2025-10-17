@@ -179,8 +179,10 @@ static void MaybeConfigureSymbolizer(const char* argv0)
 {
     // Currently only auto-configure when running under ClusterFuzzLite; other
     // environments can export these variables themselves if desired.
-    if (!RunningUnderClusterFuzzLite()) return;
     const char* const configured_symbolizer{GetEnvUnpoisoned("LLVM_SYMBOLIZER_PATH")};
+    if (!RunningUnderClusterFuzzLite()) {
+        if (configured_symbolizer == nullptr || configured_symbolizer[0] == '\0') return;
+    }
     if (TryExportSymbolizerFromEnv(configured_symbolizer)) return;
 
     try {

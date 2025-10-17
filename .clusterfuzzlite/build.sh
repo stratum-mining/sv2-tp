@@ -180,10 +180,35 @@ bundle_symbolizer() {
   local wrapper_created=0
   local symbolizer_exec_path="$dest_dir/$symbolizer_basename"
   if [ -n "$SYMBOLIZER_LOADER_BASENAME" ] && [ -e "$dest_dir/$SYMBOLIZER_LOADER_BASENAME" ]; then
-    cp ./.clusterfuzzlite/llvm-symbolizer-wrapper.sh "$symbolizer_exec_path"
-    sed -i "s|__CFL_LOADER__|$SYMBOLIZER_LOADER_BASENAME|g" "$symbolizer_exec_path"
-    sed -i "s|__CFL_SYMBOLIZER_REAL__|${symbolizer_basename}.real|g" "$symbolizer_exec_path"
-    chmod +x "$symbolizer_exec_path"
+    local wrapper_compiler=""
+    if command -v clang >/dev/null 2>&1; then
+      wrapper_compiler="clang"
+    elif command -v cc >/dev/null 2>&1; then
+      wrapper_compiler="cc"
+    elif command -v gcc >/dev/null 2>&1; then
+      wrapper_compiler="gcc"
+    else
+      echo "No suitable C compiler found to build llvm-symbolizer wrapper" >&2
+      return 1
+    fi
+
+    local wrapper_source="./.clusterfuzzlite/llvm-symbolizer-wrapper.c"
+    if [ ! -f "$wrapper_source" ]; then
+      echo "Wrapper source $wrapper_source missing" >&2
+      return 1
+    fi
+
+    local wrapper_defines=(
+      "-DWRAPPED_LOADER_BASENAME=\"${SYMBOLIZER_LOADER_BASENAME}\""
+      "-DWRAPPED_SYMBOLIZER_REAL=\"${symbolizer_basename}.real\""
+    )
+
+    if ! "$wrapper_compiler" -std=c99 -Wall -Wextra -Wpedantic -O2 -fPIE -pie \
+      "$wrapper_source" "${wrapper_defines[@]}" -o "$symbolizer_exec_path"; then
+      echo "Failed to build llvm-symbolizer wrapper using $wrapper_compiler" >&2
+      return 1
+    fi
+
     wrapper_created=1
   else
     mv "$symbolizer_real_copy" "$symbolizer_exec_path"

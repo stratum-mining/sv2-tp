@@ -58,14 +58,20 @@ static bool RunningUnderClusterFuzzLite()
     return std::getenv("SV2_CLUSTERFUZZLITE") != nullptr;
 }
 
-static void EnsureMsanExternalSymbolizer(const std::string& symbolizer_path)
+static const char* GetEnvUnpoisoned(const char* name)
 {
-    const char* existing{std::getenv("MSAN_OPTIONS")};
+    const char* value{std::getenv(name)};
 #ifdef MEMORY_SANITIZER
-    if (existing != nullptr) {
-        __msan_unpoison_string(existing);
+    if (value != nullptr) {
+        __msan_unpoison_string(value);
     }
 #endif
+    return value;
+}
+
+static void EnsureMsanExternalSymbolizer(const std::string& symbolizer_path)
+{
+    const char* existing{GetEnvUnpoisoned("MSAN_OPTIONS")};
     if (existing != nullptr && std::strstr(existing, "external_symbolizer_path=") != nullptr) {
         return;
     }
@@ -96,7 +102,7 @@ static void MaybeConfigureSymbolizer(const char* argv0)
     // environments can export these variables themselves if desired.
     if (!RunningUnderClusterFuzzLite()) return;
     if (argv0 == nullptr) return;
-    if (std::getenv("LLVM_SYMBOLIZER_PATH") != nullptr) return;
+    if (GetEnvUnpoisoned("LLVM_SYMBOLIZER_PATH") != nullptr) return;
 
     try {
         fs::path exe_path{argv0};
@@ -202,7 +208,7 @@ static void initialize()
         return WrappedGetAddrInfo(name, false);
     };
 
-    const char* env_fuzz{std::getenv("FUZZ")};
+    const char* env_fuzz{GetEnvUnpoisoned("FUZZ")};
     const bool listing_mode{std::getenv("PRINT_ALL_FUZZ_TARGETS_AND_ABORT") != nullptr ||
                             std::getenv("WRITE_ALL_FUZZ_TARGETS_AND_ABORT") != nullptr};
     static std::string g_copy;
@@ -217,7 +223,7 @@ static void initialize()
         }
         should_exit = true;
     }
-    if (const char* out_path_env = std::getenv("WRITE_ALL_FUZZ_TARGETS_AND_ABORT")) {
+    if (const char* out_path_env = GetEnvUnpoisoned("WRITE_ALL_FUZZ_TARGETS_AND_ABORT")) {
         const bool running_under_cfl{RunningUnderClusterFuzzLite()};
         const char* out_path_cstr{running_under_cfl ? "/work/fuzz_targets.txt" : out_path_env};
         if (!running_under_cfl) {
@@ -255,7 +261,7 @@ static void initialize()
         std::exit(EXIT_FAILURE);
     }
     if (!EnableFuzzDeterminism()) {
-        if (std::getenv("FUZZ_NONDETERMINISM")) {
+        if (GetEnvUnpoisoned("FUZZ_NONDETERMINISM")) {
             std::cerr << "Warning: FUZZ_NONDETERMINISM env var set, results may be inconsistent with fuzz build" << std::endl;
         } else {
             g_enable_dynamic_fuzz_determinism = true;

@@ -305,6 +305,12 @@ fi
 # patching below can locate the placeholder string.
 MAGIC_STR="d6f1a2b39c4e5d7a8b9c0d1e2f30415263748596a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00fedcba9876543210a0b1c2d3"
 
+# Keep the actual fuzz executables in a hidden directory so the visible names
+# point to wrappers that set up symbolizer environment before exec'ing them.
+real_bin_dir="$OUT/.fuzz-target-bin"
+rm -rf "$real_bin_dir"
+mkdir -p "$real_bin_dir"
+
 for fuzz_target in "${FUZZ_TARGETS[@]}"; do
   [ -z "$fuzz_target" ] && continue
   python3 - << PY
@@ -313,10 +319,10 @@ c_str_magic=b"$MAGIC_STR"
 with open('./build_fuzz/bin/fuzz','rb') as f:
     dat=f.read()
 dat=dat.replace(c_str_magic, c_str_target + c_str_magic[len(c_str_target):])
-with open("$OUT/${fuzz_target}.bin", 'wb') as g:
+with open("${real_bin_dir}/${fuzz_target}", 'wb') as g:
     g.write(dat)
 PY
-  chmod +x "$OUT/${fuzz_target}.bin"
+  chmod +x "${real_bin_dir}/${fuzz_target}"
 
   corpus_dir="assets/fuzz_corpora/${fuzz_target}"
   if [ -d "$corpus_dir" ] && find "$corpus_dir" -type f -print -quit >/dev/null 2>&1; then

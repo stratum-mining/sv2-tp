@@ -14,4 +14,10 @@ if [ -x "$SYM" ]; then
     export MSAN_OPTIONS="external_symbolizer_path=$SYM"
   fi
 fi
-exec "${DIR}/$(basename "$0").bin" "$@"
+REAL_DIR="${DIR}/.fuzz-target-bin"
+REAL_BIN="${REAL_DIR}/$(basename "$0")"
+if [ ! -x "$REAL_BIN" ]; then
+  echo "missing fuzz binary: $REAL_BIN" >&2
+  exit 127
+fi
+exec "$REAL_BIN" "$@"

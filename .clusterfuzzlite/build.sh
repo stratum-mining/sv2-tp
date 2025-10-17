@@ -95,6 +95,34 @@ copy_symbolizer_dependencies() {
   done < <(ldd "$binary" 2>/dev/null || true)
 }
 
+bundle_symbolizer() {
+  local dest_dir="$1"
+  local context_label="${2:-}"
+
+  mkdir -p "$dest_dir"
+
+  local symbolizer_realpath
+  symbolizer_realpath="$(readlink -f "$EXPECTED_SYMBOLIZER")"
+  local symbolizer_basename
+  symbolizer_basename="$(basename "$symbolizer_realpath")"
+
+  cp -p "$symbolizer_realpath" "$dest_dir/"
+  copy_symbolizer_dependencies "$symbolizer_realpath" "$dest_dir"
+
+  local suffix=""
+  if [ -n "$context_label" ]; then
+    suffix=" ($context_label)"
+  fi
+
+  if ! (cd "$dest_dir" && env -i LD_LIBRARY_PATH="$dest_dir" "./$symbolizer_basename" --version >/dev/null 2>&1); then
+    echo "Bundled llvm-symbolizer self-test failed${suffix}" >&2
+    (cd "$dest_dir" && ldd "./$symbolizer_basename" >&2) || true
+    return 1
+  fi
+
+  echo "Bundled llvm-symbolizer self-test passed${suffix}" >&2
+}
+
 bootstrap_instrumented_llvm() {
   local mode="$1"
   local sanitizer="$2"
@@ -179,6 +207,14 @@ else
 fi
 
 ensure_symbolizer_available
+
+PRE_BUNDLE_DIR="$(mktemp -d)"
+if bundle_symbolizer "$PRE_BUNDLE_DIR" "preflight"; then
+  rm -rf "$PRE_BUNDLE_DIR"
+else
+  rm -rf "$PRE_BUNDLE_DIR"
+  exit 1
+fi
 
 if [ "$CUSTOM_LIBCPP" -eq 1 ]; then
   unset SKIP_LIBCPP_RUNTIME_BUILD || true
@@ -446,16 +482,7 @@ if [ "$CUSTOM_LIBCPP" -eq 1 ] && [ -n "$CUSTOM_LIBCPP_LIB_PATH" ]; then
 fi
 
 # Bad build checks re-run the packaged binary in that minimal sandbox; ship the symbolizer beside it.
-SYMBOLIZER_REALPATH="$(readlink -f "$EXPECTED_SYMBOLIZER")"
-cp -p "$SYMBOLIZER_REALPATH" "$OUT/"
-copy_symbolizer_dependencies "$SYMBOLIZER_REALPATH" "$OUT"
-
-if ! (cd "$OUT" && env -i LD_LIBRARY_PATH="$OUT" ./llvm-symbolizer --version >/dev/null 2>&1); then
-  echo "Bundled llvm-symbolizer self-test failed" >&2
-  (cd "$OUT" && ldd ./llvm-symbolizer >&2) || true
-  exit 1
-fi
-echo "Bundled llvm-symbolizer self-test passed" >&2
+bundle_symbolizer "$OUT"
 # Leave a marker so sandboxed bad-build checks can recognise ClusterFuzzLite bundles.
 : >"$OUT/.sv2-clusterfuzzlite"
 

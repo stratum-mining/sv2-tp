@@ -73,16 +73,6 @@ copy_symbolizer_dependencies() {
       continue
     fi
 
-    case "$candidate" in
-      /lib/*|/lib64/*|/usr/lib/*|/usr/lib64/*)
-        if [[ "$candidate" == /usr/lib/llvm-*/lib/* || "$candidate" == /usr/lib/llvm-*/lib64/* ]]; then
-          :
-        else
-          continue
-        fi
-        ;;
-    esac
-
     local base
     base="$(basename "$candidate")"
     if [ -e "$dest_dir/$base" ]; then

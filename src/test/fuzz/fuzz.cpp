@@ -50,6 +50,12 @@
 
 #ifdef MEMORY_SANITIZER
 #include <sanitizer/msan_interface.h>
+#if defined(__has_include)
+#if __has_include(<sanitizer/sanitizer_flags.h>)
+#define BITCOIN_HAVE_SANITIZER_COMMON_FLAGS 1
+#include <sanitizer/sanitizer_flags.h>
+#endif
+#endif
 #endif
 
 #if defined(PROVIDE_FUZZ_MAIN_FUNCTION) && defined(__AFL_FUZZ_INIT)
@@ -75,6 +81,61 @@ static void UnpoisonPath(fs::path& path)
     if (count != 0) {
         UnpoisonMemory(native.c_str(), count * sizeof(fs::path::value_type));
     }
+#endif
+}
+
+#ifdef MEMORY_SANITIZER
+static void LogMsanSymbolizerState(const char* context)
+{
+    if (!RunningUnderClusterFuzzLite()) return;
+
+    const char* const llvm_symbolizer{GetEnvUnpoisoned("LLVM_SYMBOLIZER_PATH")};
+    const char* const msan_options{GetEnvUnpoisoned("MSAN_OPTIONS")};
+    std::fprintf(stderr, "[cfl] %s: LLVM_SYMBOLIZER_PATH='%s'\n", context, (llvm_symbolizer != nullptr && llvm_symbolizer[0] != '\0') ? llvm_symbolizer : "<unset>");
+    std::fprintf(stderr, "[cfl] %s: MSAN_OPTIONS='%s'\n", context, (msan_options != nullptr && msan_options[0] != '\0') ? msan_options : "<unset>");
+#if defined(BITCOIN_HAVE_SANITIZER_COMMON_FLAGS)
+    const auto* const flags{__sanitizer::common_flags()};
+    const char* const cached{(flags != nullptr) ? flags->external_symbolizer_path : nullptr};
+    std::fprintf(stderr, "[cfl] %s: cached external_symbolizer_path='%s'\n", context, (cached != nullptr && cached[0] != '\0') ? cached : "<empty>");
+#else
+    std::fprintf(stderr, "[cfl] %s: cached external_symbolizer_path='<unavailable>'\n", context);
+#endif
+}
+#else
+static void LogMsanSymbolizerState(const char*) {}
+#endif
+
+// Allow bundle experiments to force a harness re-exec once the desired MSan
+// environment is in place. The SV2_REQUIRE_MSAN_SYMBOLIZER_REEXEC guard keeps
+// the logic opt-in so production fuzzing keeps the existing code path.
+static void MaybeReexecForMsanSymbolizer(int argc, char** argv)
+{
+#if defined(MEMORY_SANITIZER) && defined(__linux__)
+    if (!RunningUnderClusterFuzzLite()) return;
+    if (argv == nullptr || argc <= 0 || argv[0] == nullptr) return;
+
+    const char* const require_reexec{GetEnvUnpoisoned("SV2_REQUIRE_MSAN_SYMBOLIZER_REEXEC")};
+    if (require_reexec == nullptr || require_reexec[0] == '\0') return;
+
+    const char* const already_reexecuted{GetEnvUnpoisoned("SV2_MSAN_SYMBOLIZER_REEXECUTED")};
+    if (already_reexecuted != nullptr && already_reexecuted[0] != '\0') return;
+
+    setenv("SV2_MSAN_SYMBOLIZER_REEXECUTED", "1", 1);
+    LogMsanSymbolizerState("pre-reexec");
+    if (RunningUnderClusterFuzzLite()) {
+        std::fprintf(stderr, "[cfl] re-exec requested; attempting execve('%s')\n", argv[0]);
+    }
+
+    extern char** environ;
+    if (execve(argv[0], argv, environ) != 0) {
+        if (RunningUnderClusterFuzzLite()) {
+            std::fprintf(stderr, "[cfl] execve failed: %s\n", std::strerror(errno));
+        }
+        unsetenv("SV2_MSAN_SYMBOLIZER_REEXECUTED");
+    }
+#else
+    (void)argc;
+    (void)argv;
 #endif
 }
 
@@ -118,6 +179,7 @@ static void EnsureMsanExternalSymbolizer(const std::string& symbolizer_path)
     if (RunningUnderClusterFuzzLite()) {
         std::fprintf(stderr, "[cfl] MSAN_OPTIONS now '%s'\n", new_opts.c_str());
     }
+    LogMsanSymbolizerState("EnsureMsanExternalSymbolizer");
 }
 
 static void ExportSymbolizerEnvFromUtf8(const std::string& sym)
@@ -182,10 +244,16 @@ static bool TryExportSymbolizerFromEnv(const char* configured_symbolizer)
     return TryExportSymbolizerFromUtf8(configured);
 }
 
-static void MaybeConfigureSymbolizer(const char* argv0)
+static void MaybeConfigureSymbolizer(int argc, char** argv)
 {
     const char* const configured_symbolizer{GetEnvUnpoisoned("LLVM_SYMBOLIZER_PATH")};
-    if (TryExportSymbolizerFromEnv(configured_symbolizer)) return;
+    if (TryExportSymbolizerFromEnv(configured_symbolizer)) {
+        LogMsanSymbolizerState("MaybeConfigureSymbolizer(from-env)");
+        MaybeReexecForMsanSymbolizer(argc, argv);
+        return;
+    }
+
+    const char* log_context{"MaybeConfigureSymbolizer(no-change)"};
 
     try {
         fs::path exe_path;
@@ -209,10 +277,13 @@ static void MaybeConfigureSymbolizer(const char* argv0)
 #endif
 
         if (!have_exe_path) {
+            const char* const argv0{(argv != nullptr && argc > 0) ? argv[0] : nullptr};
             if (argv0 == nullptr) {
                 if (RunningUnderClusterFuzzLite()) {
                     std::fprintf(stderr, "[cfl] Unable to discover executable path (argv0 missing).\n");
                 }
+                LogMsanSymbolizerState("MaybeConfigureSymbolizer(no-argv0)");
+                MaybeReexecForMsanSymbolizer(argc, argv);
                 return;
             }
             Unpoison(argv0);
@@ -251,11 +322,18 @@ static void MaybeConfigureSymbolizer(const char* argv0)
             if (RunningUnderClusterFuzzLite()) {
                 std::fprintf(stderr, "[cfl] Failed to configure llvm-symbolizer relative to '%s'.\n", exe_string.c_str());
             }
+            LogMsanSymbolizerState("MaybeConfigureSymbolizer(relative-failure)");
+            MaybeReexecForMsanSymbolizer(argc, argv);
             return;
         }
+        log_context = "MaybeConfigureSymbolizer(relative-success)";
     } catch (const fs::filesystem_error&) {
         // If we cannot discover the executable path, fall back to the caller-provided environment.
+        log_context = "MaybeConfigureSymbolizer(fs-exception)";
     }
+
+    LogMsanSymbolizerState(log_context);
+    MaybeReexecForMsanSymbolizer(argc, argv);
 }
 
 static constexpr char FuzzTargetPlaceholder[] = "d6f1a2b39c4e5d7a8b9c0d1e2f30415263748596a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00fedcba9876543210a0b1c2d3";
@@ -493,8 +571,7 @@ extern "C" int LLVMFuzzerInitialize(int* argc, char*** argv)
 
     SetArgs(arg_count, argv_values);
 
-    const char* argv0{(argv_values != nullptr && arg_count > 0) ? argv_values[0] : nullptr};
-    MaybeConfigureSymbolizer(argv0);
+    MaybeConfigureSymbolizer(arg_count, argv_values);
     initialize();
     return 0;
 }
@@ -509,8 +586,8 @@ int main(int argc, char** argv)
     if (argv != nullptr && argv[0] != nullptr) {
         Unpoison(argv[0]);
         UnpoisonCString(argv[0]);
-        MaybeConfigureSymbolizer(argv[0]);
     }
+    MaybeConfigureSymbolizer(argc, argv);
     initialize();
 #ifdef __AFL_LOOP
     // Enable AFL persistent mode. Requires compilation using afl-clang-fast++.

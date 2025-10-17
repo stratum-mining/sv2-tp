@@ -1,1 +1,6 @@
 language: c++
+env:
+  LLVM_SYMBOLIZER_PATH: /usr/local/bin/llvm-symbolizer
+  ASAN_SYMBOLIZER_PATH: /usr/local/bin/llvm-symbolizer
+  MSAN_SYMBOLIZER_PATH: /usr/local/bin/llvm-symbolizer
+  UBSAN_SYMBOLIZER_PATH: /usr/local/bin/llvm-symbolizer

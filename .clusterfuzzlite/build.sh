@@ -20,9 +20,26 @@ SANITIZER_CHOICE="${SANITIZER:-address}"
 CUSTOM_LIBCPP=0
 INSTRUMENTED_LIBCPP_MODE=""
 SKIP_CFL_SETUP_FLAG="${SKIP_CFL_SETUP:-false}"
+EXPECTED_SYMBOLIZER="${LLVM_SYMBOLIZER_PATH:-/usr/local/bin/llvm-symbolizer}"
 
 # shellcheck source=ci/test/cfl-common.sh
 source ./ci/test/cfl-common.sh
+
+ensure_symbolizer_available() {
+  if ls "$EXPECTED_SYMBOLIZER" >/dev/null 2>&1; then
+    echo "llvm-symbolizer found at $EXPECTED_SYMBOLIZER" >&2
+    return 0
+  fi
+
+  local actual_symbolizer
+  actual_symbolizer="$(command -v llvm-symbolizer || true)"
+  if [ -n "$actual_symbolizer" ]; then
+    echo "llvm-symbolizer found at $actual_symbolizer instead of $EXPECTED_SYMBOLIZER" >&2
+  else
+    echo "llvm-symbolizer not found (expected at $EXPECTED_SYMBOLIZER)" >&2
+  fi
+  exit 1
+}
 
 bootstrap_instrumented_llvm() {
   local mode="$1"
@@ -106,6 +123,8 @@ if [ "$SKIP_CFL_SETUP_FLAG" = "true" ] && [ -f "${BASE_ROOT_DIR}/ci.base-install
 else
   ./ci/test/01_base_install.sh
 fi
+
+ensure_symbolizer_available
 
 if [ "$CUSTOM_LIBCPP" -eq 1 ]; then
   unset SKIP_LIBCPP_RUNTIME_BUILD || true
@@ -369,18 +388,7 @@ if [ "$CUSTOM_LIBCPP" -eq 1 ] && [ -n "$CUSTOM_LIBCPP_LIB_PATH" ]; then
   done
 fi
 
-expected_symbolizer="${LLVM_SYMBOLIZER_PATH:-/usr/local/bin/llvm-symbolizer}"
-if ! ls "$expected_symbolizer" >/dev/null 2>&1; then
-  actual_symbolizer="$(command -v llvm-symbolizer || true)"
-  if [ -n "$actual_symbolizer" ]; then
-    echo "llvm-symbolizer found at $actual_symbolizer instead of $expected_symbolizer" >&2
-  else
-    echo "llvm-symbolizer not found (expected at $expected_symbolizer)" >&2
-  fi
-  exit 1
-fi
-
-cp -a "$expected_symbolizer" "$OUT/"
+cp -a "$EXPECTED_SYMBOLIZER" "$OUT/"
 
 if [ -d assets/fuzz_dicts ]; then
   find assets/fuzz_dicts -maxdepth 1 -type f -name '*.dict' -exec cp {} "$OUT/" \;

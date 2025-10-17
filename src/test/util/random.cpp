@@ -8,6 +8,7 @@
 #include <random.h>
 #include <uint256.h>
 #include <util/check.h>
+#include <util/sanitizer.h>
 
 #include <cstdlib>
 #include <iostream>
@@ -21,6 +22,8 @@ void SeedRandomStateForTest(SeedRand seedtype)
 {
     constexpr auto RANDOM_CTX_SEED{"RANDOM_CTX_SEED"};
 
+    using util::sanitizer::GetEnvUnpoisoned;
+
     // Do this once, on the first call, regardless of seedtype, because once
     // MakeRandDeterministicDANGEROUS is called, the output of GetRandHash is
     // no longer truly random. It should be enough to get the seed once for the
@@ -28,7 +31,7 @@ void SeedRandomStateForTest(SeedRand seedtype)
     static const auto g_ctx_seed = []() -> std::optional<uint256> {
         if (EnableFuzzDeterminism()) return {};
         // If RANDOM_CTX_SEED is set, use that as seed.
-        if (const char* num{std::getenv(RANDOM_CTX_SEED)}) {
+        if (const char* num{GetEnvUnpoisoned(RANDOM_CTX_SEED)}) {
             if (auto num_parsed{uint256::FromUserHex(num)}) {
                 return *num_parsed;
             } else {
@@ -51,7 +54,7 @@ void SeedRandomStateForTest(SeedRand seedtype)
         Assert(g_ctx_seed.has_value());
         seed = *g_ctx_seed;
     }
-    if (std::getenv("SV2_CLUSTERFUZZLITE") == nullptr) {
+    if (GetEnvUnpoisoned("SV2_CLUSTERFUZZLITE") == nullptr) {
         LogInfo("Setting random seed for current tests to %s=%s\n", RANDOM_CTX_SEED, seed.GetHex());
     }
     MakeRandDeterministicDANGEROUS(seed);

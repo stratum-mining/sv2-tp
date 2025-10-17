@@ -10,6 +10,7 @@
 #include <test/fuzz/check_globals.h>
 #include <test/fuzz/fuzz.h>
 #include <test/sv2_test_setup.h>
+#include <util/sanitizer.h>
 #include <functional>
 #include <string_view>
 #include <cstddef>
@@ -21,6 +22,8 @@
 extern const std::function<std::vector<const char*>()> G_TEST_COMMAND_LINE_ARGUMENTS;
 
 namespace {
+
+using util::sanitizer::GetEnvUnpoisoned;
 
 void Initialize()
 {
@@ -44,13 +47,13 @@ void Initialize()
             if (s == "--loglevel=sv2:trace" || s == "--loglevel=trace") want_sv2_trace = true;
         }
     }
-    if (want_console || std::getenv("SV2_FUZZ_LOG")) {
+    if (want_console || GetEnvUnpoisoned("SV2_FUZZ_LOG")) {
         // Turn on console logging and ensure SV2 category is enabled at the desired level.
         LogInstance().m_print_to_console = true;
         LogInstance().EnableCategory(BCLog::SV2);
         if (want_sv2_trace) {
             LogInstance().SetCategoryLogLevel({{BCLog::SV2, BCLog::Level::Trace}});
-        } else if (want_sv2_debug || std::getenv("SV2_FUZZ_LOG_DEBUG")) {
+        } else if (want_sv2_debug || GetEnvUnpoisoned("SV2_FUZZ_LOG_DEBUG")) {
             LogInstance().SetCategoryLogLevel({{BCLog::SV2, BCLog::Level::Debug}});
         }
         // Start logging to flush any buffered messages.

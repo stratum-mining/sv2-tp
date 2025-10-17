@@ -5,6 +5,7 @@
 #include <util/exec.h>
 
 #include <util/fs.h>
+#include <util/sanitizer.h>
 #include <util/subprocess.h>
 
 #include <string>
@@ -51,7 +52,7 @@ fs::path GetExePath(std::string_view argv0)
     // If argv0 doesn't contain a path separator, it was invoked from the system
     // PATH and can be searched for there.
     if (!argv0_path.has_parent_path()) {
-        if (const char* path_env = std::getenv("PATH")) {
+        if (const char* path_env = sanitizer::GetEnvUnpoisoned("PATH")) {
             size_t start{0}, end{0};
             for (std::string_view paths{path_env}; end != std::string_view::npos; start = end + 1) {
                 end = paths.find(':', start);

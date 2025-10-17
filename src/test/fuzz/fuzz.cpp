@@ -11,6 +11,7 @@
 #include <test/util/random.h>
 #include <util/check.h>
 #include <util/fs.h>
+#include <util/sanitizer.h>
 #include <util/sock.h>
 #include <util/time.h>
 #include <util/translation.h>
@@ -51,22 +52,13 @@ extern const std::function<void(const std::string&)> G_TEST_LOG_FUN{};
 
 const TranslateFn G_TRANSLATION_FUN{nullptr};
 
+using util::sanitizer::GetEnvUnpoisoned;
+
 // The instrumented toolchain we ship to ClusterFuzzLite runners lacks the MSan
 // interceptors that unpoison getenv() results, so avoid logging those strings.
 static bool RunningUnderClusterFuzzLite()
 {
-    return std::getenv("SV2_CLUSTERFUZZLITE") != nullptr;
-}
-
-static const char* GetEnvUnpoisoned(const char* name)
-{
-    const char* value{std::getenv(name)};
-#ifdef MEMORY_SANITIZER
-    if (value != nullptr) {
-        __msan_unpoison_string(value);
-    }
-#endif
-    return value;
+    return GetEnvUnpoisoned("SV2_CLUSTERFUZZLITE") != nullptr;
 }
 
 static void EnsureMsanExternalSymbolizer(const std::string& symbolizer_path)
@@ -209,21 +201,23 @@ static void initialize()
     };
 
     const char* env_fuzz{GetEnvUnpoisoned("FUZZ")};
-    const bool listing_mode{std::getenv("PRINT_ALL_FUZZ_TARGETS_AND_ABORT") != nullptr ||
-                            std::getenv("WRITE_ALL_FUZZ_TARGETS_AND_ABORT") != nullptr};
+    const char* env_print_targets{GetEnvUnpoisoned("PRINT_ALL_FUZZ_TARGETS_AND_ABORT")};
+    const char* env_write_targets{GetEnvUnpoisoned("WRITE_ALL_FUZZ_TARGETS_AND_ABORT")};
+    const bool listing_mode{env_print_targets != nullptr || env_write_targets != nullptr};
     static std::string g_copy;
     g_copy.assign((env_fuzz != nullptr && env_fuzz[0] != '\0') ? env_fuzz : FuzzTargetPlaceholder);
     g_fuzz_target = std::string_view{g_copy.data(), g_copy.size()};
 
     bool should_exit{false};
-    if (std::getenv("PRINT_ALL_FUZZ_TARGETS_AND_ABORT")) {
+    if (env_print_targets != nullptr) {
         for (const auto& [name, t] : FuzzTargets()) {
             if (t.opts.hidden) continue;
             std::cout << name << std::endl;
         }
         should_exit = true;
     }
-    if (const char* out_path_env = GetEnvUnpoisoned("WRITE_ALL_FUZZ_TARGETS_AND_ABORT")) {
+    if (env_write_targets != nullptr) {
+        const char* out_path_env{env_write_targets};
         const bool running_under_cfl{RunningUnderClusterFuzzLite()};
         const char* out_path_cstr{running_under_cfl ? "/work/fuzz_targets.txt" : out_path_env};
         if (!running_under_cfl) {

@@ -53,6 +53,7 @@ extern const std::function<void(const std::string&)> G_TEST_LOG_FUN{};
 const TranslateFn G_TRANSLATION_FUN{nullptr};
 
 using util::sanitizer::GetEnvUnpoisoned;
+using util::sanitizer::UnpoisonCString;
 
 // The instrumented toolchain we ship to ClusterFuzzLite runners lacks the MSan
 // interceptors that unpoison getenv() results, so avoid logging those strings.
@@ -97,6 +98,7 @@ static void MaybeConfigureSymbolizer(const char* argv0)
     if (GetEnvUnpoisoned("LLVM_SYMBOLIZER_PATH") != nullptr) return;
 
     try {
+        UnpoisonCString(argv0);
         fs::path exe_path{argv0};
         if (exe_path.empty()) return;
         if (!exe_path.is_absolute()) {

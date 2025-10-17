@@ -17,14 +17,21 @@
 namespace util {
 namespace sanitizer {
 
-inline const char* GetEnvUnpoisoned(const char* name)
+inline void UnpoisonCString(const char* value)
 {
-    const char* value{std::getenv(name)};
 #if defined(BITCOIN_HAVE_MEMORY_SANITIZER)
     if (value != nullptr) {
         __msan_unpoison_string(value);
     }
+#else
+    (void)value;
 #endif
+}
+
+inline const char* GetEnvUnpoisoned(const char* name)
+{
+    const char* value{std::getenv(name)};
+    UnpoisonCString(value);
     return value;
 }
 

@@ -116,12 +116,50 @@ static void ExportSymbolizerEnv(const fs::path& symbolizer_path)
 }
 #endif
 
+#if !defined(_WIN32)
+// MSan builds run on Linux GA runners; check executable bits directly.
+static bool TryExportSymbolizerFromUtf8(std::string& symbolizer_utf8)
+{
+    if (symbolizer_utf8.empty()) return false;
+    UnpoisonMemory(symbolizer_utf8.c_str(), symbolizer_utf8.size() + 1);
+    if (::access(symbolizer_utf8.c_str(), X_OK) != 0) return false;
+
+    ExportSymbolizerEnvFromUtf8(symbolizer_utf8);
+    return true;
+}
+#else
+// Windows lacks X_OK; rely on filesystem queries when we ever enable CIFuzz there.
+static bool TryExportSymbolizerFromUtf8(std::string& symbolizer_utf8)
+{
+    if (symbolizer_utf8.empty()) return false;
+    fs::path symbolizer_path{fs::PathFromString(symbolizer_utf8)};
+    UnpoisonPath(symbolizer_path);
+    if (!fs::exists(symbolizer_path) || !fs::is_regular_file(symbolizer_path)) return false;
+
+    ExportSymbolizerEnv(symbolizer_path);
+    return true;
+}
+#endif
+
+// Environment variables may be set by CI; trust them only after unpoisoning and probing.
+static bool TryExportSymbolizerFromEnv(const char* configured_symbolizer)
+{
+    if (configured_symbolizer == nullptr || configured_symbolizer[0] == '\0') return false;
+    const std::size_t configured_len{std::strlen(configured_symbolizer)};
+    if (configured_len == 0) return false;
+    UnpoisonMemory(configured_symbolizer, configured_len + 1);
+
+    std::string configured{configured_symbolizer};
+    return TryExportSymbolizerFromUtf8(configured);
+}
+
 static void MaybeConfigureSymbolizer(const char* argv0)
 {
     // Currently only auto-configure when running under ClusterFuzzLite; other
     // environments can export these variables themselves if desired.
     if (!RunningUnderClusterFuzzLite()) return;
-    if (GetEnvUnpoisoned("LLVM_SYMBOLIZER_PATH") != nullptr) return;
+    const char* const configured_symbolizer{GetEnvUnpoisoned("LLVM_SYMBOLIZER_PATH")};
+    if (TryExportSymbolizerFromEnv(configured_symbolizer)) return;
 
     try {
         fs::path exe_path;
@@ -178,18 +216,7 @@ static void MaybeConfigureSymbolizer(const char* argv0)
         }
         symbolizer_string.append("llvm-symbolizer");
 
-#if !defined(_WIN32)
-        UnpoisonMemory(symbolizer_string.c_str(), symbolizer_string.size() + 1);
-        if (::access(symbolizer_string.c_str(), X_OK) != 0) return;
-
-        ExportSymbolizerEnvFromUtf8(symbolizer_string);
-#else
-        fs::path symbolizer_path{fs::PathFromString(symbolizer_string)};
-        UnpoisonPath(symbolizer_path);
-        if (!fs::exists(symbolizer_path) || !fs::is_regular_file(symbolizer_path)) return;
-
-        ExportSymbolizerEnv(symbolizer_path);
-#endif
+        if (!TryExportSymbolizerFromUtf8(symbolizer_string)) return;
     } catch (const fs::filesystem_error&) {
         // If we cannot discover the executable path, fall back to the caller-provided environment.
     }

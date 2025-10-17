@@ -470,11 +470,8 @@ extern "C" int LLVMFuzzerInitialize(int* argc, char*** argv)
 
     SetArgs(arg_count, argv_values);
 
-    // Some environments call LLVMFuzzerInitialize with null argv pointers; guard before
-    // we try to derive the executable path for symbolizer discovery.
-    if (argv_values != nullptr && arg_count > 0 && argv_values[0] != nullptr) {
-        MaybeConfigureSymbolizer(argv_values[0]);
-    }
+    const char* argv0{(argv_values != nullptr && arg_count > 0) ? argv_values[0] : nullptr};
+    MaybeConfigureSymbolizer(argv0);
     initialize();
     return 0;
 }

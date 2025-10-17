@@ -369,12 +369,18 @@ if [ "$CUSTOM_LIBCPP" -eq 1 ] && [ -n "$CUSTOM_LIBCPP_LIB_PATH" ]; then
   done
 fi
 
-symbolizer_path="$(command -v llvm-symbolizer || true)"
-if [ -z "$symbolizer_path" ] || [ ! -x "$symbolizer_path" ]; then
-  echo "llvm-symbolizer not found in PATH" >&2
+expected_symbolizer="${LLVM_SYMBOLIZER_PATH:-/usr/local/bin/llvm-symbolizer}"
+if ! ls "$expected_symbolizer" >/dev/null 2>&1; then
+  actual_symbolizer="$(command -v llvm-symbolizer || true)"
+  if [ -n "$actual_symbolizer" ]; then
+    echo "llvm-symbolizer found at $actual_symbolizer instead of $expected_symbolizer" >&2
+  else
+    echo "llvm-symbolizer not found (expected at $expected_symbolizer)" >&2
+  fi
   exit 1
 fi
-cp -a "$symbolizer_path" "$OUT/"
+
+cp -a "$expected_symbolizer" "$OUT/"
 
 if [ -d assets/fuzz_dicts ]; then
   find assets/fuzz_dicts -maxdepth 1 -type f -name '*.dict' -exec cp {} "$OUT/" \;

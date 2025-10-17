@@ -379,8 +379,6 @@ if [ -d assets/fuzz_dicts ]; then
 fi
 
 if [ -d "$OUT" ]; then
-  echo "ClusterFuzzLite bundle contents (ls -al $OUT):"
-  ls -al "$OUT"
   echo "ClusterFuzzLite bundle tree (find $OUT -maxdepth 2):"
   find "$OUT" -maxdepth 2 -print | sort
 fi

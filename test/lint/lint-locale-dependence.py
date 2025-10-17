@@ -16,6 +16,8 @@ from subprocess import check_output, CalledProcessError
 KNOWN_VIOLATIONS = [
     "src/span.h:.*printf",
     "src/test/fuzz/locale.cpp:.*setlocale",
+    "src/test/fuzz/fuzz.cpp:.*fprintf",
+    "src/test/fuzz/fuzz.cpp:.*strerror",
     "src/test/util_tests.cpp:.*strtoll",
     "src/util/syserror.cpp:.*strerror",      # Outside this function use `SysErrorString`
 ]

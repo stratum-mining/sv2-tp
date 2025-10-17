@@ -164,9 +164,19 @@ static void MaybeConfigureSymbolizer(const char* argv0)
             have_exe_path = exe_path.is_absolute();
         }
 
-        fs::path symbolizer_path{exe_path};
-        UnpoisonPath(symbolizer_path);
-        symbolizer_path.replace_filename("llvm-symbolizer");
+        const std::string exe_string{fs::PathToString(exe_path)};
+        if (exe_string.empty()) return;
+
+        std::string symbolizer_string;
+        const auto last_sep{exe_string.find_last_of(fs::path::preferred_separator)};
+        if (last_sep != std::string::npos) {
+            symbolizer_string.assign(exe_string.data(), last_sep + 1);
+        } else {
+            symbolizer_string.assign("./");
+        }
+        symbolizer_string.append("llvm-symbolizer");
+
+        fs::path symbolizer_path{fs::PathFromString(symbolizer_string)};
         UnpoisonPath(symbolizer_path);
         if (!fs::exists(symbolizer_path) || !fs::is_regular_file(symbolizer_path)) return;
 

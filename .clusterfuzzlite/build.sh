@@ -39,6 +39,58 @@ ensure_symbolizer_available() {
   exit 1
 }
 
+copy_symbolizer_dependencies() {
+  local binary="$1"
+  local dest_dir="$2"
+
+  if [ ! -x "$binary" ]; then
+    return
+  fi
+
+  if ! command -v ldd >/dev/null 2>&1; then
+    echo "ldd not available; skipping dependency enumeration for $binary" >&2
+    return
+  fi
+
+  while IFS= read -r line; do
+    local leading
+    leading="${line%%[![:space:]]*}"
+    line="${line#"$leading"}"
+    [ -n "$line" ] || continue
+
+    local candidate=""
+    case "$line" in
+      *"=>"*)
+        candidate="${line#*=> }"
+        candidate="${candidate%% *}"
+        ;;
+      /*)
+        candidate="${line%% *}"
+        ;;
+    esac
+
+    if [ -z "$candidate" ] || [ ! -e "$candidate" ]; then
+      continue
+    fi
+
+    case "$candidate" in
+      /lib/*|/lib64/*|/usr/lib/*|/usr/lib64/*)
+        continue
+        ;;
+    esac
+
+    local base
+    base="$(basename "$candidate")"
+    if [ -e "$dest_dir/$base" ]; then
+      continue
+    fi
+
+    # Dereference symlinks so copied objects remain self-contained in the bundle.
+    cp -L -p "$candidate" "$dest_dir/"
+    echo "Bundled symbolizer dependency $candidate" >&2
+  done < <(ldd "$binary" 2>/dev/null || true)
+}
+
 bootstrap_instrumented_llvm() {
   local mode="$1"
   local sanitizer="$2"
@@ -391,6 +443,7 @@ fi
 
 # Bad build checks re-run the packaged binary in that minimal sandbox; ship the symbolizer beside it.
 cp -a "$EXPECTED_SYMBOLIZER" "$OUT/"
+copy_symbolizer_dependencies "$EXPECTED_SYMBOLIZER" "$OUT"
 # Leave a marker so sandboxed bad-build checks can recognise ClusterFuzzLite bundles.
 : >"$OUT/.sv2-clusterfuzzlite"
 

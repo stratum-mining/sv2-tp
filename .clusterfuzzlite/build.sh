@@ -75,7 +75,11 @@ copy_symbolizer_dependencies() {
 
     case "$candidate" in
       /lib/*|/lib64/*|/usr/lib/*|/usr/lib64/*)
-        continue
+        if [[ "$candidate" == /usr/lib/llvm-*/lib/* || "$candidate" == /usr/lib/llvm-*/lib64/* ]]; then
+          :
+        else
+          continue
+        fi
         ;;
     esac
 
@@ -442,8 +446,16 @@ if [ "$CUSTOM_LIBCPP" -eq 1 ] && [ -n "$CUSTOM_LIBCPP_LIB_PATH" ]; then
 fi
 
 # Bad build checks re-run the packaged binary in that minimal sandbox; ship the symbolizer beside it.
-cp -a "$EXPECTED_SYMBOLIZER" "$OUT/"
-copy_symbolizer_dependencies "$EXPECTED_SYMBOLIZER" "$OUT"
+SYMBOLIZER_REALPATH="$(readlink -f "$EXPECTED_SYMBOLIZER")"
+cp -p "$SYMBOLIZER_REALPATH" "$OUT/"
+copy_symbolizer_dependencies "$SYMBOLIZER_REALPATH" "$OUT"
+
+if ! (cd "$OUT" && env -i LD_LIBRARY_PATH="$OUT" ./llvm-symbolizer --version >/dev/null 2>&1); then
+  echo "Bundled llvm-symbolizer self-test failed" >&2
+  (cd "$OUT" && ldd ./llvm-symbolizer >&2) || true
+  exit 1
+fi
+echo "Bundled llvm-symbolizer self-test passed" >&2
 # Leave a marker so sandboxed bad-build checks can recognise ClusterFuzzLite bundles.
 : >"$OUT/.sv2-clusterfuzzlite"
 

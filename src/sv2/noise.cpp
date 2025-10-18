@@ -34,6 +34,9 @@ uint256 Sv2SignatureNoiseMessage::GetHash()
 
     uint256 hash_output;
     hasher.Finalize(hash_output.begin());
+#ifdef MEMORY_SANITIZER
+    __msan_unpoison(hash_output.begin(), uint256::size()); // MSan cannot infer Finalize writes the full digest
+#endif
     return hash_output;
 }
 

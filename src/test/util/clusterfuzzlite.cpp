@@ -20,6 +20,10 @@
 #include <unistd.h>
 #endif
 
+#if defined(__linux__)
+extern char** environ;
+#endif
+
 using util::sanitizer::GetEnvUnpoisoned;
 using util::sanitizer::Unpoison;
 using util::sanitizer::UnpoisonArray;

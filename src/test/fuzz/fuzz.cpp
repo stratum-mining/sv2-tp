@@ -85,9 +85,22 @@ static void UnpoisonPath(fs::path& path)
 }
 
 #ifdef MEMORY_SANITIZER
+static bool MsanSymbolizerDebuggingEnabled()
+{
+    static const bool kDebug = [] {
+        const char* const debug_env{GetEnvUnpoisoned("SV2_DEBUG_MSAN_SYMBOLIZER")};
+        return debug_env != nullptr && debug_env[0] != '\0';
+    }();
+    return kDebug;
+}
+#else
+static bool MsanSymbolizerDebuggingEnabled() { return false; }
+#endif
+
+#ifdef MEMORY_SANITIZER
 static void LogMsanSymbolizerState(const char* context)
 {
-    if (!RunningUnderClusterFuzzLite()) return;
+    if (!RunningUnderClusterFuzzLite() || !MsanSymbolizerDebuggingEnabled()) return;
 
     const char* const llvm_symbolizer{GetEnvUnpoisoned("LLVM_SYMBOLIZER_PATH")};
     const char* const msan_options{GetEnvUnpoisoned("MSAN_OPTIONS")};
@@ -180,7 +193,7 @@ static void EnsureMsanExternalSymbolizer(const std::string& symbolizer_path)
     }
     setenv("MSAN_OPTIONS", new_opts.c_str(), 1);
 
-    if (RunningUnderClusterFuzzLite()) {
+    if (RunningUnderClusterFuzzLite() && MsanSymbolizerDebuggingEnabled()) {
         std::fprintf(stderr, "[cfl] MSAN_OPTIONS now '%s'\n", new_opts.c_str());
     }
     LogMsanSymbolizerState("EnsureMsanExternalSymbolizer");

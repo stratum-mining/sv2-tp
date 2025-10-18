@@ -179,6 +179,10 @@ static void initialize()
     const bool listing_mode{env_print_targets != nullptr || env_write_targets != nullptr};
     static std::string g_copy;
     g_copy.assign((env_fuzz != nullptr && env_fuzz[0] != '\0') ? env_fuzz : FuzzTargetPlaceholder);
+#ifdef MEMORY_SANITIZER
+    Unpoison(g_copy);
+    UnpoisonMemory(g_copy.c_str(), g_copy.size() + 1);
+#endif
     g_fuzz_target = std::string_view{g_copy.data(), g_copy.size()};
 
     bool should_exit{false};
@@ -213,6 +217,9 @@ static void initialize()
     }
 
     const std::string target_name{g_fuzz_target};
+#ifdef MEMORY_SANITIZER
+    Unpoison(target_name);
+#endif
     const auto it = FuzzTargets().find(target_name);
     if (it == FuzzTargets().end()) {
         if (!listing_mode && (env_fuzz == nullptr || env_fuzz[0] == '\0')) {

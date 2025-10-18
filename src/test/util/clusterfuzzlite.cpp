@@ -118,7 +118,8 @@ static void LogMsanSymbolizerState(const char* context)
 static void MaybeReexecForMsanSymbolizer(int argc, char** argv)
 {
 #if defined(__linux__)
-    if (!RunningUnderClusterFuzzLite()) return;
+    const bool running_cfl{RunningUnderClusterFuzzLite()};
+    if (!running_cfl) return;
     if (argv == nullptr || argc <= 0 || argv[0] == nullptr) return;
 
     const char* const disable_reexec{GetEnvUnpoisoned("SV2_DISABLE_MSAN_SYMBOLIZER_REEXEC")};
@@ -132,13 +133,13 @@ static void MaybeReexecForMsanSymbolizer(int argc, char** argv)
 
     setenv("SV2_MSAN_SYMBOLIZER_REEXECUTED", "1", 1);
     LogMsanSymbolizerState("pre-reexec");
-    if (RunningUnderClusterFuzzLite()) {
+    if (running_cfl) {
         std::fprintf(stderr, "[cfl] re-exec requested; attempting execve('%s')\n", argv[0]);
     }
 
     extern char** environ;
     if (execve(argv[0], argv, environ) != 0) {
-        if (RunningUnderClusterFuzzLite()) {
+        if (running_cfl) {
             std::fprintf(stderr, "[cfl] execve failed: %s\n", std::strerror(errno));
         }
         unsetenv("SV2_MSAN_SYMBOLIZER_REEXECUTED");
@@ -210,16 +211,17 @@ static void ExportSymbolizerEnv(const fs::path& symbolizer_path)
 static bool TryExportSymbolizerFromUtf8(std::string& symbolizer_utf8)
 {
     if (symbolizer_utf8.empty()) return false;
+    const bool running_cfl{RunningUnderClusterFuzzLite()};
     UnpoisonMemory(symbolizer_utf8.c_str(), symbolizer_utf8.size() + 1);
     if (::access(symbolizer_utf8.c_str(), X_OK) != 0) {
-        if (RunningUnderClusterFuzzLite()) {
+        if (running_cfl) {
             std::fprintf(stderr, "[cfl] llvm-symbolizer candidate '%s' not usable: %s\n", symbolizer_utf8.c_str(), std::strerror(errno));
         }
         return false;
     }
 
     ExportSymbolizerEnvFromUtf8(symbolizer_utf8);
-    if (RunningUnderClusterFuzzLite()) {
+    if (running_cfl) {
         std::fprintf(stderr, "[cfl] configured llvm-symbolizer at '%s'\n", symbolizer_utf8.c_str());
     }
     return true;
@@ -250,6 +252,9 @@ static bool TryExportSymbolizerFromEnv(const char* configured_symbolizer)
 
 static void ConfigureClusterFuzzLiteMsanSymbolizer(int argc, char** argv)
 {
+    const bool running_cfl{RunningUnderClusterFuzzLite()};
+    if (!running_cfl) return;
+
     const char* const configured_symbolizer{GetEnvUnpoisoned("LLVM_SYMBOLIZER_PATH")};
     if (TryExportSymbolizerFromEnv(configured_symbolizer)) {
         LogMsanSymbolizerState("MaybeConfigureSymbolizer(from-env)");
@@ -283,7 +288,7 @@ static void ConfigureClusterFuzzLiteMsanSymbolizer(int argc, char** argv)
         if (!have_exe_path) {
             const char* const argv0{(argv != nullptr && argc > 0) ? argv[0] : nullptr};
             if (argv0 == nullptr) {
-                if (RunningUnderClusterFuzzLite()) {
+                if (running_cfl) {
                     std::fprintf(stderr, "[cfl] Unable to discover executable path (argv0 missing).\n");
                 }
                 LogMsanSymbolizerState("MaybeConfigureSymbolizer(no-argv0)");
@@ -323,7 +328,7 @@ static void ConfigureClusterFuzzLiteMsanSymbolizer(int argc, char** argv)
         symbolizer_string.append("llvm-symbolizer");
 
         if (!TryExportSymbolizerFromUtf8(symbolizer_string)) {
-            if (RunningUnderClusterFuzzLite()) {
+            if (running_cfl) {
                 std::fprintf(stderr, "[cfl] Failed to configure llvm-symbolizer relative to '%s'.\n", exe_string.c_str());
             }
             LogMsanSymbolizerState("MaybeConfigureSymbolizer(relative-failure)");

@@ -25,8 +25,18 @@
 
 extern char **environ;
 
+/*
+ * ClusterFuzzLite runs binaries from a self-contained bundle that ships its
+ * own loader and llvm-symbolizer. This wrapper locates the bundle relative to
+ * the executable, injects the bundled loader via --library-path, and tail-calls
+ * into the real symbolizer so that sanitizer reports resolve without relying
+ * on host tooling.
+ */
+
 static int resolve_self(char *out, size_t out_sz, char **argv)
 {
+  /* Resolve the absolute path of the wrapper. Prefer /proc/self/exe but fall
+   * back to realpath(argv[0]) to handle platforms without procfs. */
   ssize_t len = readlink("/proc/self/exe", out, out_sz - 1);
   if (len > 0 && (size_t)len < out_sz) {
     out[len] = '\0';
@@ -53,6 +63,8 @@ static int resolve_self(char *out, size_t out_sz, char **argv)
 
 static int dir_from_path(const char *path, char *dir, size_t dir_sz)
 {
+  /* Extract the directory portion of path, producing either '.', '/', or the
+   * substring up to the final slash. The result stays within dir_sz. */
   if (path == NULL) {
     errno = ENOENT;
     return -1;
@@ -92,6 +104,8 @@ static int dir_from_path(const char *path, char *dir, size_t dir_sz)
 
 static int join_path(char *out, size_t out_sz, const char *dir, const char *base)
 {
+  /* Join dir and base while handling edge cases for empty and root directories
+   * without allocating. snprintf provides bounds checking for the composite. */
   int written;
   if (dir[0] == '\0') {
     written = snprintf(out, out_sz, "%s", base);
@@ -111,6 +125,9 @@ static int join_path(char *out, size_t out_sz, const char *dir, const char *base
 
 int main(int argc, char **argv)
 {
+  /* Compute loader/symbolizer locations relative to the wrapper and exec the
+   * loader with arguments that force it to pick up the bundled libraries and
+   * symbolizer binary. On failure, emit diagnostics and exit with 127. */
   char self_path[PATH_MAX];
   if (resolve_self(self_path, sizeof(self_path), argv) != 0) {
     fprintf(stderr, "[cfl] llvm-symbolizer wrapper failed to resolve argv0: %s\n", strerror(errno));

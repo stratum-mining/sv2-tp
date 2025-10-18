@@ -131,22 +131,6 @@ int main(int argc, char **argv)
     return 127;
   }
 
-  size_t direct_total = (size_t)argc + 1;
-  char *direct_argv[direct_total];
-  direct_argv[0] = symbolizer_path;
-  for (int i = 1; i < argc; ++i) {
-    direct_argv[i] = argv[i];
-  }
-  direct_argv[argc] = NULL;
-
-  execve(symbolizer_path, direct_argv, environ);
-  int direct_errno = errno;
-  if (direct_errno != ENOENT && direct_errno != ENOEXEC) {
-    fprintf(stderr, "[cfl] llvm-symbolizer wrapper direct exec of '%s' failed: %s\n", symbolizer_path, strerror(direct_errno));
-  }
-
-  fprintf(stderr, "[cfl] llvm-symbolizer wrapper launching '%s' via loader '%s'\n", symbolizer_path, loader_path);
-
   size_t extra = 4;
   size_t total = (size_t)argc + extra;
   char *new_argv[total + 1];

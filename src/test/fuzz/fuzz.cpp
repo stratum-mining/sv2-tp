@@ -295,13 +295,13 @@ extern "C" int LLVMFuzzerInitialize(int* argc, char*** argv)
 {
     int arg_count{0};
     if (argc != nullptr) {
-    UnpoisonMemory(argc, sizeof(*argc));
+        UnpoisonMemory(argc, sizeof(*argc));
         arg_count = *argc;
     }
 
     char** argv_values{nullptr};
     if (argv != nullptr) {
-    UnpoisonMemory(argv, sizeof(*argv));
+        UnpoisonMemory(argv, sizeof(*argv));
         argv_values = *argv;
         if (argv_values != nullptr && arg_count > 0) {
             UnpoisonArray(argv_values, static_cast<std::size_t>(arg_count));

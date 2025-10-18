@@ -20,10 +20,6 @@
 #include <unistd.h>
 #endif
 
-#if defined(__linux__)
-extern char** environ;
-#endif
-
 #if defined(__has_feature)
 #if __has_feature(memory_sanitizer)
 #define CLUSTERFUZZLITE_HAVE_MSAN 1
@@ -216,6 +212,9 @@ static void ExportSymbolizerEnv(const fs::path& symbolizer_path)
 #if !defined(_WIN32)
 static bool TryExportSymbolizerFromUtf8(std::string& symbolizer_utf8)
 {
+#if defined(CLUSTERFUZZLITE_HAVE_MSAN)
+    Unpoison(symbolizer_utf8);
+#endif
     if (symbolizer_utf8.empty()) return false;
     const bool running_cfl{RunningUnderClusterFuzzLite()};
     UnpoisonMemory(symbolizer_utf8.c_str(), symbolizer_utf8.size() + 1);
@@ -235,6 +234,9 @@ static bool TryExportSymbolizerFromUtf8(std::string& symbolizer_utf8)
 #else
 static bool TryExportSymbolizerFromUtf8(std::string& symbolizer_utf8)
 {
+#if defined(CLUSTERFUZZLITE_HAVE_MSAN)
+    Unpoison(symbolizer_utf8);
+#endif
     if (symbolizer_utf8.empty()) return false;
     fs::path symbolizer_path{fs::PathFromString(symbolizer_utf8)};
     UnpoisonPath(symbolizer_path);

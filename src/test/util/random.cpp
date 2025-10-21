@@ -2,7 +2,6 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <test/util/clusterfuzzlite.h>
 #include <test/util/random.h>
 
 #include <logging.h>
@@ -12,7 +11,6 @@
 
 #include <cstdlib>
 #include <iostream>
-#include <optional>
 
 std::atomic<bool> g_seeded_g_prng_zero{false};
 
@@ -46,14 +44,7 @@ void SeedRandomStateForTest(SeedRand seedtype)
         Assert(g_seeded_g_prng_zero); // Only SeedRandomStateForTest(SeedRand::ZEROS) is allowed in fuzz tests
         Assert(!g_used_g_prng);       // The global PRNG must not have been used before SeedRandomStateForTest(SeedRand::ZEROS)
     }
-    uint256 seed{};
-    seed.SetNull();
-    if (seedtype == SeedRand::FIXED_SEED) {
-        Assert(g_ctx_seed.has_value());
-        seed = *g_ctx_seed;
-    }
-    if (!RunningUnderClusterFuzzLite()) {
-        LogInfo("Setting random seed for current tests to %s=%s\n", RANDOM_CTX_SEED, seed.GetHex());
-    }
+    const uint256& seed{seedtype == SeedRand::FIXED_SEED ? g_ctx_seed.value() : uint256::ZERO};
+    LogInfo("Setting random seed for current tests to %s=%s\n", RANDOM_CTX_SEED, seed.GetHex());
     MakeRandDeterministicDANGEROUS(seed);
 }

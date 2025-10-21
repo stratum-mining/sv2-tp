@@ -7,7 +7,6 @@
 #include <logging.h>
 #include <netaddress.h>
 #include <netbase.h>
-#include <test/util/clusterfuzzlite.h>
 #include <test/util/coverage.h>
 #include <test/util/random.h>
 #include <util/check.h>
@@ -105,9 +104,6 @@ extern const std::function<std::string()> G_TEST_GET_FULL_NAME{[] {
 
 static void initialize()
 {
-    if (RunningUnderClusterFuzzLite()) {
-        LogInstance().SetLogLevel(BCLog::Level::Warning);
-    }
     // By default, make the RNG deterministic with a fixed seed. This will affect all
     // randomness during the fuzz test, except:
     // - GetStrongRandBytes(), which is used for the creation of private key material.
@@ -146,12 +142,8 @@ static void initialize()
         should_exit = true;
     }
     if (env_write_targets != nullptr) {
-        const char* out_path_env{env_write_targets};
-        const bool running_under_cfl{RunningUnderClusterFuzzLite()};
-        const char* out_path_cstr{running_under_cfl ? "/work/fuzz_targets.txt" : out_path_env};
-        if (!running_under_cfl) {
-            std::cout << "Writing all fuzz target names to '" << out_path_cstr << "'." << std::endl;
-        }
+        const char* out_path_cstr{env_write_targets};
+        std::cout << "Writing all fuzz target names to '" << out_path_cstr << "'." << std::endl;
         if (FILE* out_file = std::fopen(out_path_cstr, "wb")) {
             for (const auto& [name, t] : FuzzTargets()) {
                 if (t.opts.hidden) continue;
@@ -313,9 +305,7 @@ int main(int argc, char** argv)
         }
     }
     const auto end_time{Now<SteadySeconds>()};
-    if (!RunningUnderClusterFuzzLite()) {
-        std::cout << g_fuzz_target << ": succeeded against " << tested << " files in " << count_seconds(end_time - start_time) << "s." << std::endl;
-    }
+    std::cout << g_fuzz_target << ": succeeded against " << tested << " files in " << count_seconds(end_time - start_time) << "s." << std::endl;
 #endif
     return 0;
 }

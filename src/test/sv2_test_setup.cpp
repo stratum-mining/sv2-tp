@@ -4,42 +4,19 @@
 
 #include <test/sv2_test_setup.h>
 
+#include <array>
 #include <chainparamsbase.h>
 #include <common/args.h>
 #include <key.h>
+#include <string>
 #include <util/chaintype.h>
 #include <util/string.h>
 #include <util/time.h>
-#include <array>
-#include <cstring>
-#include <string>
-
-#ifdef MEMORY_SANITIZER
-#include <sanitizer/msan_interface.h>
-#endif
 
 Sv2BasicTestingSetup::Sv2BasicTestingSetup()
 {
-#ifdef MEMORY_SANITIZER
-    // MSan flags the std::string temporaries created for these literals when selecting params.
-    static const char* kChainNames[] = {"", "main", "testnet3", "testnet4", "signet", "regtest"};
-    for (const char* name : kChainNames) {
-        __msan_unpoison(const_cast<char*>(name), std::strlen(name) + 1);
-    }
-#endif
-#ifdef MEMORY_SANITIZER
-    __msan_scoped_disable_interceptor_checks msan_disable_scope;
-#endif
     // Select a default chain for tests to satisfy BaseParams() users.
     SelectBaseParams(ChainType::REGTEST);
-#ifdef MEMORY_SANITIZER
-    const CBaseChainParams& params{BaseParams()};
-    __msan_unpoison(const_cast<CBaseChainParams*>(&params), sizeof(CBaseChainParams));
-    auto& data_dir = const_cast<std::string&>(params.DataDir());
-    __msan_unpoison(&data_dir, sizeof(data_dir));
-    const char* data_dir_chars{data_dir.c_str()};
-    __msan_unpoison(const_cast<char*>(data_dir_chars), data_dir.size() + 1);
-#endif
 
     // Default mock time anchored to Bitcoin genesis so certificate helpers see a realistic clock.
     SetMockTime(TEST_GENESIS_TIME);

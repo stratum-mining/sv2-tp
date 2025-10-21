@@ -12,7 +12,6 @@
 #include <test/util/random.h>
 #include <util/check.h>
 #include <util/fs.h>
-#include <util/sanitizer.h>
 #include <util/sock.h>
 #include <util/time.h>
 #include <util/translation.h>
@@ -31,30 +30,13 @@
 #include <memory>
 #include <random>
 #include <string>
-#include <system_error>
 #include <tuple>
 #include <utility>
 #include <vector>
 
-#if defined(__linux__)
-#include <unistd.h>
-#endif
-
-#if defined(__has_feature)
-#if __has_feature(memory_sanitizer)
-#define MEMORY_SANITIZER 1
-#endif
-#endif
-
-#ifdef MEMORY_SANITIZER
-#include <sanitizer/msan_interface.h>
-#if defined(__has_include)
-#if __has_include(<sanitizer/sanitizer_flags.h>)
-#define BITCOIN_HAVE_SANITIZER_COMMON_FLAGS 1
-#include <sanitizer/sanitizer_flags.h>
-#endif
-#endif
-#endif
+#include <tuple>
+#include <utility>
+#include <vector>
 
 #if defined(PROVIDE_FUZZ_MAIN_FUNCTION) && defined(__AFL_FUZZ_INIT)
 __AFL_FUZZ_INIT();
@@ -63,17 +45,6 @@ __AFL_FUZZ_INIT();
 extern const std::function<void(const std::string&)> G_TEST_LOG_FUN{};
 
 const TranslateFn G_TRANSLATION_FUN{nullptr};
-
-using util::sanitizer::GetEnvUnpoisoned;
-using util::sanitizer::Unpoison;
-using util::sanitizer::UnpoisonArray;
-using util::sanitizer::UnpoisonCString;
-using util::sanitizer::UnpoisonMemory;
-
-static void MaybeConfigureSymbolizer(int argc, char** argv)
-{
-    EnsureClusterFuzzLiteMsanSymbolizer(argc, argv);
-}
 
 static constexpr char FuzzTargetPlaceholder[] = "d6f1a2b39c4e5d7a8b9c0d1e2f30415263748596a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00fedcba9876543210a0b1c2d3";
 
@@ -89,15 +60,8 @@ static std::vector<const char*> g_args;
 static void SetArgs(int argc, char** argv)
 {
     if (argv == nullptr || argc <= 0) return;
-    UnpoisonArray(argv, static_cast<std::size_t>(argc));
-    if (argv[0] != nullptr) {
-        Unpoison(argv[0]);
-        UnpoisonCString(argv[0]);
-    }
     for (int i = 1; i < argc; ++i) {
         if (argv[i] == nullptr) continue;
-        Unpoison(argv[i]);
-        UnpoisonCString(argv[i]);
         // Only take into account arguments that start with `--`. The others are for the fuzz engine:
         // `fuzz -runs=1 fuzz_corpora/address_deserialize_v2 --checkaddrman=5`
         if (strlen(argv[i]) > 2 && argv[i][0] == '-' && argv[i][1] == '-') {
@@ -124,14 +88,6 @@ auto& FuzzTargets()
 void FuzzFrameworkRegisterTarget(std::string_view name, TypeTestOneInput target, FuzzTargetOptions opts)
 {
     std::string owned_name{name};
-#ifdef MEMORY_SANITIZER
-    __msan_unpoison(&owned_name, sizeof(owned_name));
-    const auto name_length{name.size()};
-    const auto bytes_to_unpoison = name_length + 1U; // include trailing null terminator
-    if (bytes_to_unpoison != 0) {
-        __msan_unpoison(owned_name.data(), bytes_to_unpoison);
-    }
-#endif
     const auto [it, ins]{FuzzTargets().emplace(std::move(owned_name), FuzzTarget{target, opts})};
     Assert(ins);
 }
@@ -173,9 +129,9 @@ static void initialize()
         return WrappedGetAddrInfo(name, false);
     };
 
-    const char* env_fuzz{GetEnvUnpoisoned("FUZZ")};
-    const char* env_print_targets{GetEnvUnpoisoned("PRINT_ALL_FUZZ_TARGETS_AND_ABORT")};
-    const char* env_write_targets{GetEnvUnpoisoned("WRITE_ALL_FUZZ_TARGETS_AND_ABORT")};
+    const char* env_fuzz{std::getenv("FUZZ")};
+    const char* env_print_targets{std::getenv("PRINT_ALL_FUZZ_TARGETS_AND_ABORT")};
+    const char* env_write_targets{std::getenv("WRITE_ALL_FUZZ_TARGETS_AND_ABORT")};
     const bool listing_mode{env_print_targets != nullptr || env_write_targets != nullptr};
     static std::string g_copy;
     g_copy.assign((env_fuzz != nullptr && env_fuzz[0] != '\0') ? env_fuzz : FuzzTargetPlaceholder);
@@ -228,7 +184,7 @@ static void initialize()
         std::exit(EXIT_FAILURE);
     }
     if (!EnableFuzzDeterminism()) {
-        if (GetEnvUnpoisoned("FUZZ_NONDETERMINISM")) {
+        if (std::getenv("FUZZ_NONDETERMINISM")) {
             std::cerr << "Warning: FUZZ_NONDETERMINISM env var set, results may be inconsistent with fuzz build" << std::endl;
         } else {
             g_enable_dynamic_fuzz_determinism = true;
@@ -295,22 +251,15 @@ extern "C" int LLVMFuzzerInitialize(int* argc, char*** argv)
 {
     int arg_count{0};
     if (argc != nullptr) {
-        UnpoisonMemory(argc, sizeof(*argc));
         arg_count = *argc;
     }
 
     char** argv_values{nullptr};
     if (argv != nullptr) {
-        UnpoisonMemory(argv, sizeof(*argv));
         argv_values = *argv;
-        if (argv_values != nullptr && arg_count > 0) {
-            UnpoisonArray(argv_values, static_cast<std::size_t>(arg_count));
-        }
     }
 
     SetArgs(arg_count, argv_values);
-
-    MaybeConfigureSymbolizer(arg_count, argv_values);
     initialize();
     return 0;
 }
@@ -318,15 +267,6 @@ extern "C" int LLVMFuzzerInitialize(int* argc, char*** argv)
 #if defined(PROVIDE_FUZZ_MAIN_FUNCTION)
 int main(int argc, char** argv)
 {
-    if (argv != nullptr && argc > 0) {
-        UnpoisonArray(argv, static_cast<std::size_t>(argc));
-    }
-    // Standalone execution also defends against missing argv entries before probing paths.
-    if (argv != nullptr && argv[0] != nullptr) {
-        Unpoison(argv[0]);
-        UnpoisonCString(argv[0]);
-    }
-    MaybeConfigureSymbolizer(argc, argv);
     initialize();
 #ifdef __AFL_LOOP
     // Enable AFL persistent mode. Requires compilation using afl-clang-fast++.

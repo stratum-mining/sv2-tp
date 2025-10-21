@@ -7,9 +7,6 @@
 #include <crypto/chacha20poly1305.h>
 #include <crypto/hmac_sha256.h>
 #include <logging.h>
-#ifdef MEMORY_SANITIZER
-#include <sanitizer/msan_interface.h>
-#endif
 #include <util/check.h>
 #include <util/strencodings.h>
 #include <util/time.h>
@@ -34,9 +31,6 @@ uint256 Sv2SignatureNoiseMessage::GetHash()
 
     uint256 hash_output;
     hasher.Finalize(hash_output.begin());
-#ifdef MEMORY_SANITIZER
-    __msan_unpoison(hash_output.begin(), uint256::size()); // MSan cannot infer Finalize writes the full digest
-#endif
     return hash_output;
 }
 
@@ -66,9 +60,6 @@ bool Sv2SignatureNoiseMessage::Validate(XOnlyPubKey authority_key)
 void Sv2SignatureNoiseMessage::SignSchnorr(const CKey& authority_key, std::span<unsigned char> sig)
 {
     authority_key.SignSchnorr(this->GetHash(), sig, nullptr, {});
-#ifdef MEMORY_SANITIZER
-    __msan_unpoison(sig.data(), sig.size());
-#endif
 }
 
 Sv2CipherState::Sv2CipherState(NoiseHash&& key) : m_key(std::move(key)) {};
@@ -89,9 +80,6 @@ bool Sv2CipherState::DecryptWithAd(std::span<const std::byte> associated_data, s
         LogTrace(BCLog::SV2, "Message decryption failed\n");
         return false;
     }
-#ifdef MEMORY_SANITIZER
-    __msan_unpoison(plain.data(), plain.size());
-#endif
     // Only increase nonce if decryption succeeded
     m_nonce++;
     return true;

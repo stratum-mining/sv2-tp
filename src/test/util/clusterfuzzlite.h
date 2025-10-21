@@ -10,9 +10,4 @@
 // implementation falls back to bundle metadata when needed.
 bool RunningUnderClusterFuzzLite();
 
-// Ensure MSan builds running under ClusterFuzzLite point at the bundled
-// llvm-symbolizer, re-execing once if needed so the runtime observes the
-// updated environment. No-op on non-MSan builds.
-void EnsureClusterFuzzLiteMsanSymbolizer(int argc, char** argv);
-
 #endif // BITCOIN_TEST_UTIL_CLUSTERFUZZLITE_H

@@ -352,6 +352,14 @@ if [ "$CUSTOM_LIBCPP" -eq 1 ]; then
   fi
 fi
 
+if [ "$CUSTOM_LIBCPP" -ne 1 ]; then
+  if [ -n "$FUZZ_LIBS_VALUE" ]; then
+    FUZZ_LIBS_VALUE="${FUZZ_LIBS_VALUE};-lstdc++"
+  else
+    FUZZ_LIBS_VALUE="-lstdc++"
+  fi
+fi
+
 if [ "$CUSTOM_LIBCPP" -eq 1 ] && [ "$FUZZ_LIBS_VALUE" = "$LIB_FUZZING_ENGINE" ]; then
   FUZZ_LIBS_VALUE="${LIB_FUZZING_ENGINE};-lstdc++"
 fi

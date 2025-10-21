@@ -223,17 +223,63 @@ CUSTOM_LIBCPP_LIB_PATH=""
 if [ "$CUSTOM_LIBCPP" -ne 1 ]; then
   CXX_BIN="${CXX:-clang++}"
   DEFAULT_LIBCPP_DIR=""
+  SYSTEM_LIBSTDCPP_DIR=""
+
   if command -v "$CXX_BIN" >/dev/null 2>&1; then
     libcxx_archive="$("$CXX_BIN" -print-file-name=libc++.a 2>/dev/null || true)"
     if [ -n "$libcxx_archive" ] && [ "$libcxx_archive" != "libc++.a" ]; then
       DEFAULT_LIBCPP_DIR="$(dirname "$libcxx_archive")"
     fi
+    stdcpp_path="$("$CXX_BIN" -print-file-name=libstdc++.so 2>/dev/null || true)"
+    if [ -z "$stdcpp_path" ] || [ "$stdcpp_path" = "libstdc++.so" ]; then
+      stdcpp_path="$("$CXX_BIN" -print-file-name=libstdc++.a 2>/dev/null || true)"
+    fi
+    if [ -n "$stdcpp_path" ] && [ "$stdcpp_path" != "libstdc++.so" ] && [ "$stdcpp_path" != "libstdc++.a" ]; then
+      SYSTEM_LIBSTDCPP_DIR="$(dirname "$stdcpp_path")"
+    fi
   fi
 
+  if [ -z "$SYSTEM_LIBSTDCPP_DIR" ] && command -v g++ >/dev/null 2>&1; then
+    stdcpp_path="$(g++ -print-file-name=libstdc++.so 2>/dev/null || true)"
+    if [ -z "$stdcpp_path" ] || [ "$stdcpp_path" = "libstdc++.so" ]; then
+      stdcpp_path="$(g++ -print-file-name=libstdc++.a 2>/dev/null || true)"
+    fi
+    if [ -n "$stdcpp_path" ] && [ "$stdcpp_path" != "libstdc++.so" ] && [ "$stdcpp_path" != "libstdc++.a" ]; then
+      SYSTEM_LIBSTDCPP_DIR="$(dirname "$stdcpp_path")"
+    fi
+  fi
+
+  declare -a LIB_SEARCH_PATHS=()
+  if [ -n "$SYSTEM_LIBSTDCPP_DIR" ] && [ -d "$SYSTEM_LIBSTDCPP_DIR" ]; then
+    LIB_SEARCH_PATHS+=("$SYSTEM_LIBSTDCPP_DIR")
+  fi
   if [ -n "$DEFAULT_LIBCPP_DIR" ] && [ -d "$DEFAULT_LIBCPP_DIR" ]; then
-    export LIBRARY_PATH="${DEFAULT_LIBCPP_DIR}${LIBRARY_PATH:+:${LIBRARY_PATH}}"
-    export LD_LIBRARY_PATH="${DEFAULT_LIBCPP_DIR}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
-    export LDFLAGS="${LDFLAGS} -L${DEFAULT_LIBCPP_DIR} -Wl,-rpath,${DEFAULT_LIBCPP_DIR}"
+    if [ "$DEFAULT_LIBCPP_DIR" != "$SYSTEM_LIBSTDCPP_DIR" ]; then
+      LIB_SEARCH_PATHS+=("$DEFAULT_LIBCPP_DIR")
+    fi
+  fi
+
+  if [ ${#LIB_SEARCH_PATHS[@]} -gt 0 ]; then
+    local_path_list="${LIBRARY_PATH:-}"
+    local_ld_path="${LD_LIBRARY_PATH:-}"
+    for search_dir in "${LIB_SEARCH_PATHS[@]}"; do
+      if [ -n "$local_path_list" ]; then
+        local_path_list="${search_dir}:${local_path_list}"
+      else
+        local_path_list="$search_dir"
+      fi
+      if [ -n "$local_ld_path" ]; then
+        local_ld_path="${search_dir}:${local_ld_path}"
+      else
+        local_ld_path="$search_dir"
+      fi
+      export LDFLAGS="${LDFLAGS} -L${search_dir}"
+    done
+    export LIBRARY_PATH="$local_path_list"
+    export LD_LIBRARY_PATH="$local_ld_path"
+    if [ -n "$DEFAULT_LIBCPP_DIR" ]; then
+      export LDFLAGS="${LDFLAGS} -Wl,-rpath,${DEFAULT_LIBCPP_DIR}"
+    fi
   fi
 fi
 

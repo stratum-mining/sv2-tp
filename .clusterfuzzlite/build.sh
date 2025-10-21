@@ -95,6 +95,28 @@ log_cfl_toolchain_artifacts() {
   fi
 }
 
+normalize_stdlib_flag() {
+  local existing="${1:-}"
+  local token
+  local -a tokens=()
+  if [ -n "$existing" ]; then
+    read -r -a tokens <<<"$existing"
+  fi
+
+  local -a filtered=()
+  for token in "${tokens[@]}"; do
+    case "$token" in
+      -stdlib=libc++|-stdlib=libstdc++)
+        continue
+        ;;
+    esac
+    filtered+=("$token")
+  done
+
+  filtered+=("-stdlib=libstdc++")
+  printf '%s' "${filtered[*]}"
+}
+
 INSTRUMENTED_LIBCPP_MODE="$(cfl_instrumented_mode "$SANITIZER_CHOICE")"
 if [ "$DISABLE_CUSTOM_LIBCPP" = "true" ]; then
   if [ -n "$INSTRUMENTED_LIBCPP_MODE" ]; then
@@ -390,6 +412,12 @@ if [ "$SANITIZER_CHOICE" = "memory" ]; then
   EXTRA_CMAKE_ARGS+=("-DAPPEND_CPPFLAGS=-U_FORTIFY_SOURCE")
 fi
 
+CMAKE_C_FLAGS_VALUE="${CFLAGS:-}"
+CMAKE_CXX_FLAGS_VALUE="${CXXFLAGS:-}"
+if [ "$CUSTOM_LIBCPP" -ne 1 ]; then
+  CMAKE_CXX_FLAGS_VALUE="$(normalize_stdlib_flag "$CMAKE_CXX_FLAGS_VALUE")"
+fi
+
 cmake -B build_fuzz \
   --toolchain "depends/${BUILD_TRIPLET}/toolchain.cmake" \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -397,8 +425,8 @@ cmake -B build_fuzz \
   -DCMAKE_CXX_COMPILER="${CXX:-clang++}" \
   -DCMAKE_C_FLAGS_RELWITHDEBINFO="" \
   -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="" \
-  -DCMAKE_C_FLAGS="${CFLAGS:-}" \
-  -DCMAKE_CXX_FLAGS="${CXXFLAGS:-}" \
+  -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS_VALUE}" \
+  -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS_VALUE}" \
   -DBUILD_FOR_FUZZING=ON \
   -DBUILD_FUZZ_BINARY=ON \
   -DFUZZ_LIBS="${FUZZ_LIBS_VALUE:-${LIB_FUZZING_ENGINE:-}}" \

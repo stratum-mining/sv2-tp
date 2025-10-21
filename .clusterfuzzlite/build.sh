@@ -69,7 +69,7 @@ log_cfl_toolchain_artifacts() {
       ls -l -- "$resolved" 2>/dev/null | sed 's/^/    /' >&2 || true
       sha256sum -- "$resolved" 2>/dev/null | sed 's/^/    /' >&2 || true
       if [ -n "$nm_bin" ]; then
-        if "$nm_bin" --defined-only --print-file-name "$resolved" 2>/dev/null | grep -q '__msan' ; then
+        if "$nm_bin" --print-file-name "$resolved" 2>/dev/null | grep -q '__msan'; then
           echo "  ${lib}_msan_refs=present" >&2
         else
           echo "  ${lib}_msan_refs=absent" >&2
@@ -85,7 +85,7 @@ log_cfl_toolchain_artifacts() {
     find /cxx_build/lib -maxdepth 1 -type f \( -name 'libc++*' -o -name 'libc++abi*' -o -name 'libunwind*' -o -name 'libclang_rt.*' \) \
       -print 2>/dev/null | sed 's/^/    /' >&2 || true
     if [ -n "$nm_bin" ] && [ -f /cxx_build/lib/libc++.a ]; then
-      if "$nm_bin" --defined-only --print-file-name /cxx_build/lib/libc++.a 2>/dev/null | grep -q '__msan'; then
+      if "$nm_bin" --print-file-name /cxx_build/lib/libc++.a 2>/dev/null | grep -q '__msan'; then
         echo "  instrumented_libcxx_lib_msanimp=present" >&2
       else
         echo "  instrumented_libcxx_lib_msanimp=absent" >&2

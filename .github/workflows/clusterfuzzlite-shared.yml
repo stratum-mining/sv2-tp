@@ -35,7 +35,7 @@ jobs:
     name: ${{ inputs.job_name }} (${{ matrix.sanitizer }})
     runs-on: ubuntu-latest
     env:
-      SV2_FUZZ_SABOTAGE: ${{ vars.SV2_FUZZ_SABOTAGE }}
+      SV2_FUZZ_SABOTAGE: ${{ (vars.SV2_FUZZ_SABOTAGE != '' && vars.SV2_FUZZ_SABOTAGE != '0' && vars.SV2_FUZZ_SABOTAGE != 'false') && '1' || '0' }}
     concurrency:
       group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.ref }}
       cancel-in-progress: true

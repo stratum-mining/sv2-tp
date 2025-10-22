@@ -239,8 +239,8 @@ FUZZ_TARGET(sv2_noise_cipher_roundtrip, .init = Initialize)
         assert(plain == plain_read);
     }
 
-    if (std::getenv("SV2_FUZZ_SABOTAGE")) {
-        LogTrace(BCLog::SV2, "Sabotage triggered via SV2_FUZZ_SABOTAGE env var, aborting");
+    const char* sabotage_env = std::getenv("SV2_FUZZ_SABOTAGE");
+    if (sabotage_env && sabotage_env[0] == '1') {
 #if defined(__GNUC__)
         __builtin_trap();
 #else

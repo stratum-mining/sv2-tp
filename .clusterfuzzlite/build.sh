@@ -331,16 +331,6 @@ if [ -d assets/fuzz_dicts ]; then
   find assets/fuzz_dicts -maxdepth 1 -type f -name '*.dict' -exec cp {} "$OUT/" \;
 fi
 
-# Ensure the fuzzing bundle carries a symbolizer so crash reports remain symbolized when
-# ClusterFuzzLite executes targets outside of this build container.
-symbolizer_bin="$(command -v llvm-symbolizer || true)"
-if [ -n "$symbolizer_bin" ] && [ -x "$symbolizer_bin" ]; then
-  cp -f "$symbolizer_bin" "$OUT/llvm-symbolizer"
-  chmod +x "$OUT/llvm-symbolizer"
-else
-  echo "warning: llvm-symbolizer binary not found in PATH" >&2
-fi
-
 if [ -d "$OUT" ]; then
   echo "ClusterFuzzLite bundle tree (find $OUT -maxdepth 2):"
   find "$OUT" -maxdepth 2 -print | sort

@@ -72,18 +72,6 @@ jobs:
           CCACHE_DIR: /workspace/.cfl-ccache
           CCACHE_MAXSIZE: 500M
 
-      - name: Detect symbolizer (${{ matrix.sanitizer }})
-        id: detect-symbolizer
-        run: |
-          set -euo pipefail
-          symbolizer_path="$(command -v llvm-symbolizer || true)"
-          if [ -z "$symbolizer_path" ]; then
-            echo "llvm-symbolizer not found in PATH" >&2
-            exit 1
-          fi
-          ls -l "$symbolizer_path"
-          echo "path=$symbolizer_path" >> "$GITHUB_OUTPUT"
-
       - name: Run fuzzers (${{ matrix.sanitizer }})
         if: ${{ inputs.run_fuzzers }}
         uses: google/clusterfuzzlite/actions/run_fuzzers@v1
@@ -99,7 +87,7 @@ jobs:
         env:
           CCACHE_DIR: /workspace/.cfl-ccache
           CCACHE_MAXSIZE: 500M
-          LLVM_SYMBOLIZER_PATH: ${{ steps.detect-symbolizer.outputs.path }}
-          ASAN_SYMBOLIZER_PATH: ${{ steps.detect-symbolizer.outputs.path }}
-          MSAN_SYMBOLIZER_PATH: ${{ steps.detect-symbolizer.outputs.path }}
-          UBSAN_SYMBOLIZER_PATH: ${{ steps.detect-symbolizer.outputs.path }}
+          LLVM_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer
+          ASAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer
+          MSAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer
+          UBSAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer

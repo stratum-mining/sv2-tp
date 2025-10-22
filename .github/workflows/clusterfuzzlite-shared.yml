@@ -72,6 +72,11 @@ jobs:
           CCACHE_DIR: /workspace/.cfl-ccache
           CCACHE_MAXSIZE: 500M
 
+      - name: Verify bundled symbolizer (${{ matrix.sanitizer }})
+        run: |
+          ls -l build-out/llvm-symbolizer
+          test -x build-out/llvm-symbolizer
+
       - name: Run fuzzers (${{ matrix.sanitizer }})
         if: ${{ inputs.run_fuzzers }}
         uses: google/clusterfuzzlite/actions/run_fuzzers@v1

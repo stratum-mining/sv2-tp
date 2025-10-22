@@ -11,7 +11,7 @@ source "${SCRIPT_DIR}/cfl-common.sh"
 
 if [ "${1:-}" = "" ] || [ "${2:-}" = "" ]; then
   echo "Usage: $0 <operation> <sanitizer>" >&2
-  echo "  Supported operations: base-install, check-symbolizer" >&2
+  echo "  Supported operations: base-install, detect-symbolizer" >&2
   exit 1
 fi
 
@@ -68,14 +68,14 @@ case "${operation}" in
       "$image" \
       -lc './ci/test/01_base_install.sh'
     ;;
-  check-symbolizer)
+  detect-symbolizer)
     image='gcr.io/oss-fuzz-base/clusterfuzzlite-run-fuzzers:v1'
     ensure_image_cached "$image"
     docker run \
       "${docker_common[@]}" \
       -e "LLVM_SYMBOLIZER_PATH=${LLVM_SYMBOLIZER_PATH:-}" \
       "$image" \
-      -lc "set -euo pipefail; path=\${LLVM_SYMBOLIZER_PATH:-/usr/bin/llvm-symbolizer}; if [ ! -x \"\$path\" ]; then echo \"llvm-symbolizer missing at \$path\" >&2; exit 1; fi; echo \"llvm-symbolizer present at \$path\""
+      -lc "set -euo pipefail; desired=\${LLVM_SYMBOLIZER_PATH:-}; if [ -n \"\$desired\" ] && [ -x \"\$desired\" ]; then printf '%s\n' \"\$desired\"; exit 0; fi; found=\$(command -v llvm-symbolizer || true); if [ -n \"\$found\" ] && [ -x \"\$found\" ]; then printf '%s\n' \"\$found\"; exit 0; fi; for candidate in /usr/lib/llvm-*/bin/llvm-symbolizer /usr/local/bin/llvm-symbolizer /opt/llvm/bin/llvm-symbolizer; do if [ -x \"\$candidate\" ]; then printf '%s\n' \"\$candidate\"; exit 0; fi; done; echo 'llvm-symbolizer missing in container' >&2; exit 1"
     ;;
   *)
     echo "Unknown operation: ${operation}" >&2

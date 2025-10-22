@@ -72,9 +72,13 @@ jobs:
           CCACHE_DIR: /workspace/.cfl-ccache
           CCACHE_MAXSIZE: 500M
 
-      - name: Check llvm-symbolizer (${{ matrix.sanitizer }})
+      - name: Detect llvm-symbolizer (${{ matrix.sanitizer }})
         if: ${{ inputs.run_fuzzers }}
-        run: ./ci/test/run-cfl-helper.sh check-symbolizer "${{ matrix.sanitizer }}"
+        id: detect-symbolizer
+        run: |
+          set -euo pipefail
+          path="$(./ci/test/run-cfl-helper.sh detect-symbolizer "${{ matrix.sanitizer }}")"
+          echo "path=$path" >> "$GITHUB_OUTPUT"
         shell: bash
         env:
           CCACHE_DIR: /workspace/.cfl-ccache
@@ -96,7 +100,7 @@ jobs:
         env:
           CCACHE_DIR: /workspace/.cfl-ccache
           CCACHE_MAXSIZE: 500M
-          LLVM_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer
-          ASAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer
-          MSAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer
-          UBSAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer
+          LLVM_SYMBOLIZER_PATH: ${{ steps.detect-symbolizer.outputs.path }}
+          ASAN_SYMBOLIZER_PATH: ${{ steps.detect-symbolizer.outputs.path }}
+          MSAN_SYMBOLIZER_PATH: ${{ steps.detect-symbolizer.outputs.path }}
+          UBSAN_SYMBOLIZER_PATH: ${{ steps.detect-symbolizer.outputs.path }}

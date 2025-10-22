@@ -72,6 +72,15 @@ jobs:
           CCACHE_DIR: /workspace/.cfl-ccache
           CCACHE_MAXSIZE: 500M
 
+      - name: Check llvm-symbolizer (${{ matrix.sanitizer }})
+        if: ${{ inputs.run_fuzzers }}
+        run: ./ci/test/run-cfl-helper.sh check-symbolizer "${{ matrix.sanitizer }}"
+        shell: bash
+        env:
+          CCACHE_DIR: /workspace/.cfl-ccache
+          CCACHE_MAXSIZE: 500M
+          LLVM_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer
+
       - name: Run fuzzers (${{ matrix.sanitizer }})
         if: ${{ inputs.run_fuzzers }}
         uses: google/clusterfuzzlite/actions/run_fuzzers@v1

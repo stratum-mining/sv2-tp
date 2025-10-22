@@ -34,6 +34,8 @@ jobs:
   fuzz:
     name: ${{ inputs.job_name }} (${{ matrix.sanitizer }})
     runs-on: ubuntu-latest
+    env:
+      SV2_FUZZ_SABOTAGE: ${{ vars.SV2_FUZZ_SABOTAGE }}
     concurrency:
       group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.ref }}
       cancel-in-progress: true

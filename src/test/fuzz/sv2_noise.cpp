@@ -14,6 +14,7 @@
 #include <string_view>
 #include <cstddef>
 
+#include <cstdlib>
 #include <cstdint>
 #include <util/vector.h>
 
@@ -236,5 +237,14 @@ FUZZ_TARGET(sv2_noise_cipher_roundtrip, .init = Initialize)
         if (!ok) break;
 
         assert(plain == plain_read);
+    }
+
+    if (std::getenv("SV2_FUZZ_SABOTAGE")) {
+        LogTrace(BCLog::SV2, "Sabotage triggered via SV2_FUZZ_SABOTAGE env var, aborting");
+#if defined(__GNUC__)
+        __builtin_trap();
+#else
+        std::abort();
+#endif
     }
 }

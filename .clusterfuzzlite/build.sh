@@ -29,12 +29,9 @@ export CI_RETRY_EXE="${CI_RETRY_EXE:-bash ./ci/retry/retry --}"
 export APT_LLVM_V="${APT_LLVM_V:-21}"
 SANITIZER_CHOICE="${SANITIZER:-address}"
 SKIP_CFL_SETUP_FLAG="${SKIP_CFL_SETUP:-false}"
-EXPECTED_SYMBOLIZER="${LLVM_SYMBOLIZER_PATH:-/usr/local/bin/llvm-symbolizer}"
 
 # shellcheck source=ci/test/cfl-common.sh
 source ./ci/test/cfl-common.sh
-# shellcheck source=.clusterfuzzlite/symbolizer.sh
-source ./.clusterfuzzlite/symbolizer.sh
 
 log_cfl_toolchain_artifacts() {
   local cxx_bin="${CXX:-clang++}"
@@ -106,8 +103,6 @@ else
   ./ci/test/01_base_install.sh
 fi
 
-ensure_symbolizer_available
-
 # Surface ClusterFuzzLite-provided toolchain flags for visibility and auditing.
 echo "[cfl] toolchain env:" >&2
 echo "  CC=${CC:-}"
@@ -118,14 +113,6 @@ echo "  LIB_FUZZING_ENGINE=${LIB_FUZZING_ENGINE:-}"
 echo "  SANITIZER=${SANITIZER:-}"
 
 log_cfl_toolchain_artifacts
-
-PRE_BUNDLE_DIR="$(mktemp -d)"
-if bundle_symbolizer "$PRE_BUNDLE_DIR" "preflight"; then
-  rm -rf "$PRE_BUNDLE_DIR"
-else
-  rm -rf "$PRE_BUNDLE_DIR"
-  exit 1
-fi
 
 export BUILD_TRIPLET="x86_64-pc-linux-gnu"
 export CFLAGS="${CFLAGS:-} -flto=full"
@@ -301,7 +288,7 @@ cmake --build build_fuzz -j"$(nproc)"
 
 # First execution happens inside the build container so we can enumerate targets before bundling.
 # The later "bad build" replay runs in a stripped sandbox with only bundled files, so passing here
-# doesn't guarantee libs/symbolizers are packaged correctly—that check happens post-bundle.
+# doesn't guarantee all runtime artefacts are packaged correctly—that check happens post-bundle.
 WRITE_ALL_FUZZ_TARGETS_AND_ABORT="$WORK/fuzz_targets.txt" ./build_fuzz/bin/fuzz || true
 readarray -t FUZZ_TARGETS < "$WORK/fuzz_targets.txt" || FUZZ_TARGETS=()
 
@@ -337,8 +324,6 @@ PY
 
 done
 
-# Bad build checks re-run the packaged binary in that minimal sandbox; ship the symbolizer beside it.
-bundle_symbolizer "$OUT"
 # Leave a marker so sandboxed bad-build checks can recognise ClusterFuzzLite bundles.
 : >"$OUT/.sv2-clusterfuzzlite"
 

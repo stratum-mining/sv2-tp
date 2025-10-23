@@ -227,8 +227,6 @@ elif [ "$DEPENDS_STAMP_PRESENT" -eq 1 ]; then
   NEED_DEPENDS_BUILD=0
 fi
 
-export DEPENDS_LOG_VERBOSE=
-
 if [ "$NEED_DEPENDS_BUILD" -eq 1 ]; then
   (
     cd depends

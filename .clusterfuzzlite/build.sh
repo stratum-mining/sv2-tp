@@ -64,13 +64,6 @@ log_cfl_toolchain_artifacts() {
       echo "  ${lib}_path=${resolved}" >&2
       find "$resolved" -maxdepth 0 -printf '%M %4k %u %g %TY-%Tm-%Td %TT %p\n' 2>/dev/null | sed 's/^/    /' >&2 || true
       sha256sum -- "$resolved" 2>/dev/null | sed 's/^/    /' >&2 || true
-      if [ -n "$nm_bin" ]; then
-        if "$nm_bin" --print-file-name "$resolved" 2>/dev/null | grep -q '__msan'; then
-          echo "  ${lib}_msan_refs=present" >&2
-        else
-          echo "  ${lib}_msan_refs=absent" >&2
-        fi
-      fi
     else
       echo "  ${lib}_path=${resolved:-<none>}" >&2
     fi

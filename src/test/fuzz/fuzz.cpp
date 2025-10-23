@@ -4,7 +4,6 @@
 
 #include <test/fuzz/fuzz.h>
 
-#include <logging.h>
 #include <netaddress.h>
 #include <netbase.h>
 #include <test/util/coverage.h>
@@ -76,14 +75,13 @@ struct FuzzTarget {
 
 auto& FuzzTargets()
 {
-    static std::map<std::string, FuzzTarget, std::less<>> g_fuzz_targets;
+    static std::map<std::string_view, FuzzTarget> g_fuzz_targets;
     return g_fuzz_targets;
 }
 
 void FuzzFrameworkRegisterTarget(std::string_view name, TypeTestOneInput target, FuzzTargetOptions opts)
 {
-    std::string owned_name{name};
-    const auto [it, ins]{FuzzTargets().emplace(std::move(owned_name), FuzzTarget{target, opts})};
+    const auto [it, ins]{FuzzTargets().emplace(name, FuzzTarget{target, opts})};
     Assert(ins);
 }
 
@@ -138,17 +136,12 @@ static void initialize()
         should_exit = true;
     }
     if (env_write_targets != nullptr) {
-        const char* out_path_cstr{env_write_targets};
-        std::cout << "Writing all fuzz target names to '" << out_path_cstr << "'." << std::endl;
-        if (FILE* out_file = std::fopen(out_path_cstr, "wb")) {
-            for (const auto& [name, t] : FuzzTargets()) {
-                if (t.opts.hidden) continue;
-                std::fwrite(name.data(), 1, name.size(), out_file);
-                std::fputc('\n', out_file);
-            }
-            std::fclose(out_file);
-        } else {
-            std::perror("fopen fuzz target list");
+        const char* out_path = env_write_targets;
+        std::cout << "Writing all fuzz target names to '" << out_path << "'." << std::endl;
+        std::ofstream out_stream{out_path, std::ios::binary};
+        for (const auto& [name, t] : FuzzTargets()) {
+            if (t.opts.hidden) continue;
+            out_stream << name << std::endl;
         }
         should_exit = true;
     }
@@ -156,8 +149,7 @@ static void initialize()
         std::exit(EXIT_SUCCESS);
     }
 
-    const std::string target_name{g_fuzz_target};
-    const auto it = FuzzTargets().find(target_name);
+    const auto it = FuzzTargets().find(g_fuzz_target);
     if (it == FuzzTargets().end()) {
         if (!listing_mode && (env_fuzz == nullptr || env_fuzz[0] == '\0')) {
             std::cerr << "Must select fuzz target with the FUZZ env var." << std::endl;

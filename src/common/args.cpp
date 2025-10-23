@@ -574,8 +574,8 @@ fs::path GetDefaultDataDir()
     return GetSpecialFolderPath(CSIDL_LOCAL_APPDATA) / "Bitcoin";
 #else
     fs::path pathRet;
-    const char* pszHome = std::getenv("HOME");
-    if (pszHome == nullptr || pszHome[0] == '\0')
+    char* pszHome = getenv("HOME");
+    if (pszHome == nullptr || strlen(pszHome) == 0)
         pathRet = fs::path("/");
     else
         pathRet = fs::path(pszHome);

@@ -172,11 +172,6 @@ mkdir -p "$DISTSRC"
     # Build Bitcoin Core
     cmake --build build -j "$JOBS"
 
-    # Perform basic security checks on a series of executables.
-    cmake --build build -j 1 --target check-security ${V:+--verbose}
-    # Check that executables only contain allowed version symbols.
-    cmake --build build -j 1 --target check-symbols ${V:+--verbose}
-
     mkdir -p "$OUTDIR"
 
     # Note: sv2-tp has no GUI and therefore no NSIS installer, so unlike
@@ -195,6 +190,19 @@ mkdir -p "$DISTSRC"
             cmake --install build --prefix "${INSTALLPATH}"
             ;;
     esac
+
+    executables=()
+    for executable in "${INSTALLPATH}/bin/"* "${INSTALLPATH}/libexec/"*; do
+        if [ -f "$executable" ]; then
+            executables+=("$executable")
+        fi
+    done
+    # Perform basic security checks on installed executables.
+    echo "Checking binary security on installed executables..."
+    python3 "${DISTSRC}/contrib/guix/security-check.py" "${executables[@]}"
+    # Check that executables only contain allowed version symbols.
+    echo "Running symbol and dynamic library checks on installed executables..."
+    python3 "${DISTSRC}/contrib/guix/symbol-check.py" "${executables[@]}"
 
 )  # $DISTSRC
 

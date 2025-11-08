@@ -17,27 +17,3 @@ function(setup_split_debug_script)
     )
   endif()
 endfunction()
-
-function(add_maintenance_targets)
-  if(NOT TARGET Python3::Interpreter)
-    return()
-  endif()
-
-  foreach(target IN ITEMS test_sv2 sv2-tp)
-    if(TARGET ${target})
-      list(APPEND executables $<TARGET_FILE:${target}>)
-    endif()
-  endforeach()
-
-  add_custom_target(check-symbols
-    COMMAND ${CMAKE_COMMAND} -E echo "Running symbol and dynamic library checks..."
-    COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/contrib/guix/symbol-check.py ${executables}
-    VERBATIM
-  )
-
-  add_custom_target(check-security
-    COMMAND ${CMAKE_COMMAND} -E echo "Checking binary security..."
-    COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/contrib/guix/security-check.py ${executables}
-    VERBATIM
-  )
-endfunction()

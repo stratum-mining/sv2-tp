@@ -17,6 +17,8 @@
 #include <sync.h>
 #include <uint256.h>
 
+using interfaces::MemoryLoad;
+
 // Minimal mocks for the Mining IPC interface used by sv2 tests.
 
 struct MockEvent {
@@ -81,6 +83,7 @@ public:
     std::unique_ptr<interfaces::BlockTemplate> createNewBlock(const node::BlockCreateOptions&, bool cooldown) override;
     void interrupt() override;
     bool checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) override;
+    MemoryLoad getMemoryLoad() override;
 
     // Accessors for tests (thread-safe)
     uint64_t GetTemplateSeq();

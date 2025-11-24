@@ -556,6 +556,7 @@ void Sv2TemplateProvider::PruneBlockTemplateCache()
     uint256 prev_hash = m_best_prev_hash;
     std::erase_if(m_block_template_cache, [prev_hash] (const auto& kv) {
         if (kv.second.first != prev_hash) {
+            LogTrace(BCLog::SV2, "Prune stale template id=%lu (%zus after new tip)", kv.first, STALE_TEMPLATE_GRACE_PERIOD);
             return true;
         }
         return false;

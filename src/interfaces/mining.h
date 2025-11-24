@@ -23,6 +23,12 @@ class CScript;
 
 namespace interfaces {
 
+//! Tracks memory usage for template-bound transactions.
+struct MemoryLoad
+{
+    uint64_t usage{0};
+};
+
 //! Block template interface
 class BlockTemplate
 {
@@ -129,6 +135,12 @@ public:
      * For signets the challenge verification is skipped when check_pow is false.
      */
     virtual bool checkBlock(const CBlock& block, const node::BlockCheckOptions& options, std::string& reason, std::string& debug) = 0;
+
+    /**
+     * Returns the current memory load for template transactions outside the
+     * mempool.
+     */
+    virtual MemoryLoad getMemoryLoad() = 0;
 };
 
 } // namespace interfaces

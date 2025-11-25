@@ -260,9 +260,21 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                 std::shared_ptr client = m_connman->GetClientById(client_id);
                 if (!client) return false;
 
-                // The node enforces a minimum of 2000, though not for IPC so we could go a bit
-                // lower, but let's not...
-                options.block_reserved_weight = 2000 + client->m_coinbase_tx_outputs_size * 4;
+                // https://stratumprotocol.org/specification/07-Template-Distribution-Protocol#71-coinbaseoutputconstraints-client-server
+                // Weight units reserved for block header, transaction count,
+                // and various fixed and variable coinbase fields.
+                const size_t block_reserved_floor{1168};
+                // Reserve a little more so that if the above calculation is
+                // wrong or there's an implementation error, we don't produce
+                // an invalid bock when the template is completely full.
+                const size_t block_reserved_padding{400};
+
+                // Bitcoin Core enforces a mimimum -blockreservedweight of 2000,
+                // but via IPC we can go below that.
+                options.block_reserved_weight = block_reserved_floor +
+                                                block_reserved_padding +
+                                                client->m_coinbase_tx_outputs_size * 4;
+
             }
             return true;
         };

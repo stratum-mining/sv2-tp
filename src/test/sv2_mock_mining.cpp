@@ -123,6 +123,13 @@ std::unique_ptr<interfaces::BlockTemplate> MockMining::createNewBlock(const node
 }
 bool MockMining::checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) { return true; }
 
+MemoryLoad MockMining::getMemoryLoad()
+{
+    return {
+        .usage = 0
+    };
+}
+
 uint64_t MockMining::GetTemplateSeq()
 {
     LOCK(state->m);

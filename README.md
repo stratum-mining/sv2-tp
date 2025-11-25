@@ -29,7 +29,13 @@ dependencies.
 
 Usage
 ------------------------
-Download or compile Bitcoin Core v30.0 or later. Start it with:
+sv2-tp releases up to v1.0.4 can be used against Bitcoin Core v30.0.
+
+Newer releases, as well as compiling from source, require compiling Bitcoin
+Core from a recent master commit (until a future release contains the necessary
+changes). This is due to various breaking changes in the IPC interface.
+
+Start it with:
 
  ```sh
  bitcoin -m node -ipcbind=unix

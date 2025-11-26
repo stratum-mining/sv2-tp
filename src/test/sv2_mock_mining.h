@@ -58,6 +58,7 @@ public:
     CBlock getBlock() override;
     std::vector<CAmount> getTxFees() override;
     std::vector<int64_t> getTxSigops() override;
+    node::CoinbaseTemplate getCoinbase() override;
     CTransactionRef getCoinbaseTx() override;
     std::vector<unsigned char> getCoinbaseCommitment() override;
     int getWitnessCommitmentIndex() override;

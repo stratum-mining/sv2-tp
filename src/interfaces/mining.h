@@ -8,6 +8,7 @@
 #include <consensus/amount.h>
 #include <interfaces/types.h>
 #include <sv2/block_options.h>
+#include <sv2/coinbase_template.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <uint256.h>
@@ -38,7 +39,10 @@ public:
     // Sigop cost per transaction, not including coinbase transaction.
     virtual std::vector<int64_t> getTxSigops() = 0;
 
+    virtual node::CoinbaseTemplate getCoinbase() = 0;
+
     virtual CTransactionRef getCoinbaseTx() = 0;
+
     virtual std::vector<unsigned char> getCoinbaseCommitment() = 0;
     virtual int getWitnessCommitmentIndex() = 0;
 

@@ -257,4 +257,89 @@ BOOST_AUTO_TEST_CASE(client_tests)
     tester.m_mining_control->Shutdown();
 }
 
+// Test the fee-based rate limiting timer behavior.
+// This test uses is_test=false to exercise the actual timer logic that is
+// normally bypassed in tests. The timer blocks fee-based template updates
+// until fee_check_interval seconds have passed (-sv2interval flag).
+BOOST_AUTO_TEST_CASE(fee_timer_blocking_test)
+{
+    // Clear mock time so the Timer uses real wall-clock time.
+    // The test fixture sets mock time, which would prevent the timer from
+    // advancing without explicit SetMockTime calls.
+    SetMockTime(std::chrono::seconds{0});
+
+    // Use is_test=false to test actual timer behavior.
+    // Use a short fee_check_interval (2s) to keep the test fast.
+    Sv2TemplateProviderOptions opts;
+    opts.is_test = false;
+    opts.fee_check_interval = std::chrono::seconds{2};
+    TPTester tester{opts};
+
+    tester.handshake();
+
+    node::Sv2NetMsg setup{tester.SetupConnectionMsg()};
+    tester.receiveMessage(setup);
+    tester.PeerReceiveBytes(); // SetupConnection.Success
+
+    // Send CoinbaseOutputConstraints to trigger template generation
+    std::vector<uint8_t> coinbase_output_constraint_bytes{
+        0x01, 0x00, 0x00, 0x00, // coinbase_output_max_additional_size
+        0x00, 0x00              // coinbase_output_max_sigops
+    };
+    node::Sv2NetMsg coc_msg{node::Sv2MsgType::COINBASE_OUTPUT_CONSTRAINTS, std::move(coinbase_output_constraint_bytes)};
+    tester.receiveMessage(coc_msg);
+
+    // Receive initial NewTemplate + SetNewPrevHash
+    constexpr size_t SV2_SET_NEW_PREV_HASH_MESSAGE_SIZE = 8 + 32 + 4 + 4 + 32;
+    constexpr size_t SV2_NEW_TEMPLATE_MESSAGE_SIZE =
+        8 + 1 + 4 + 4 + 2 + 4 + 8 + 4 + 2 + 56 + 4 + 1;
+    const size_t expected_set_new_prev_hash = SV2_HEADER_ENCRYPTED_SIZE + SV2_SET_NEW_PREV_HASH_MESSAGE_SIZE + Poly1305::TAGLEN;
+    const size_t expected_new_template = SV2_HEADER_ENCRYPTED_SIZE + SV2_NEW_TEMPLATE_MESSAGE_SIZE + Poly1305::TAGLEN;
+    const size_t expected_pair_bytes = expected_set_new_prev_hash + expected_new_template;
+
+    size_t initial_bytes = 0;
+    while (initial_bytes < expected_pair_bytes) {
+        initial_bytes += tester.PeerReceiveBytes();
+    }
+    BOOST_REQUIRE_EQUAL(initial_bytes, expected_pair_bytes);
+
+    // Timer was reset after the initial template was sent.
+    uint64_t seq = tester.m_mining_control->GetTemplateSeq();
+    BOOST_TEST_MESSAGE("Initial template sequence: " << seq);
+
+    // Immediately trigger a fee increase. The timer hasn't fired yet (just reset),
+    // so this should be blocked (fee_delta = MAX_MONEY, threshold not met).
+    BOOST_TEST_MESSAGE("Triggering fee increase while timer is blocking...");
+    std::vector<CTransactionRef> blocked_fee_txs{MakeDummyTx()};
+    tester.m_mining_control->TriggerFeeIncrease(blocked_fee_txs);
+
+    // Wait for the mock's waitNext timeout (fee_check_interval = 2s) plus buffer.
+    // Should NOT get a new template because the timer blocked fee checks.
+    bool got_template = tester.m_mining_control->WaitForTemplateSeq(seq + 1, std::chrono::milliseconds{2500});
+    BOOST_REQUIRE_MESSAGE(!got_template, "Fee increase should be blocked when timer hasn't fired");
+
+    // Verify template count is still 1
+    BOOST_REQUIRE_EQUAL(tester.GetBlockTemplateCount(), 1);
+
+    // Now more than fee_check_interval (2s) has passed since the timer was reset.
+    // The timer should fire on the next iteration, allowing fee checks.
+    BOOST_TEST_MESSAGE("Triggering fee increase after timer should have fired...");
+    std::vector<CTransactionRef> allowed_fee_txs{MakeDummyTx()};
+    tester.m_mining_control->TriggerFeeIncrease(allowed_fee_txs);
+
+    // This time we should get a template. Allow up to 3s since the TP may be
+    // partway through a 2s waitNext cycle when we trigger the fee increase.
+    got_template = tester.m_mining_control->WaitForTemplateSeq(seq + 1, std::chrono::milliseconds{3000});
+    BOOST_REQUIRE_MESSAGE(got_template, "Fee increase should be allowed after timer fires");
+
+    // Receive the NewTemplate message
+    size_t bytes_nt = tester.PeerReceiveBytes();
+    BOOST_REQUIRE_EQUAL(bytes_nt, expected_new_template);
+
+    // Verify we now have 2 templates
+    BOOST_REQUIRE_EQUAL(tester.GetBlockTemplateCount(), 2);
+
+    tester.m_mining_control->Shutdown();
+}
+
 BOOST_AUTO_TEST_SUITE_END()

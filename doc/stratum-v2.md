@@ -159,7 +159,7 @@ its own merits and issues.
 To get help with the stratum side of things, this Discord may be useful: https://discord.gg/fsEW23wFYs
 
 The Stratum Reference Implementation (SRI) provides example implementations of
-the various (other) Stratum v2 roles: https://github.com/stratum-mining/stratum
+the various (other) Stratum v2 roles: https://github.com/stratum-mining/sv2-apps
 
 You can set up an entire pool on your own machine. You can also connect to an
 existing pool and only run a limited set of roles on your machine, e.g. the
@@ -200,22 +200,22 @@ First start the node:
 build/bin/bitcoind -testnet4 -sv2 -debug=sv2
 ```
 
-Build and run a Job Declarator client: [stratum-mining/stratum/tree/main/roles/jd-client](https://github.com/stratum-mining/stratum/tree/main/roles/jd-client
+Build and run a Job Declarator client: [sv2-apps/miner-apps/jd-client](https://github.com/stratum-mining/sv2-apps/tree/main/miner-apps/jd-client)
 
 This client connects to your node to receive new block templates and then "declares"
 them to a Job Declarator server. Additionally it connects to the pool itself.
 
-Copy [jdc-config-hosted-example.toml](https://github.com/stratum-mining/stratum/blob/main/roles/jd-client/config-examples/jdc-config-hosted-example.toml)
+Copy [jdc-config-hosted-example.toml](https://github.com/stratum-mining/sv2-apps/blob/main/miner-apps/jd-client/config-examples/jdc-config-hosted-example.toml)
 to e.g. `~/.stratum/testnet4-jdc.toml` and comment out `tp_authority_public_key`.
 
 The `coinbase_outputs` is used for fallback to solo mining. Generate an address
 of any type and then use the `getaddressinfo` RPC to find its public key.
 
-Finally you most likely need to use the v1 to v2 translator: [stratum-mining/stratum/tree/main/roles/translator](https://github.com/stratum-mining/stratum/tree/main/roles/translator),
+Finally you most likely need to use the v1 to v2 translator: [sv2-apps/miner-apps/translator](https://github.com/stratum-mining/sv2-apps/tree/main/miner-apps/translator),
 even when you have a stratum v2 capable miner (see notes on ASIC's and Firmware below).
 
 You need to point the translator to your job declarator client, which in turn takes
-care of connecting to the pool. Try [tproxy-config-local-jdc-example.toml](https://github.com/stratum-mining/stratum/blob/main/roles/translator/tproxy-config-local-jdc-example.toml).
+care of connecting to the pool. Try [tproxy-config-local-jdc-example.toml](https://github.com/stratum-mining/sv2-apps/blob/main/miner-apps/translator/config-examples/tproxy-config-local-jdc-example.toml).
 
 As soon as you turn on the translator, the Bitcoin Core log should show a `SetupConnection` [message](https://github.com/stratum-mining/sv2-spec/blob/main/08-Message-Types.md).
 

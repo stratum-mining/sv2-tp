@@ -12,8 +12,8 @@ export CONTAINER_NAME=ci_macos_cross_intel
 export CI_IMAGE_NAME_TAG="mirror.gcr.io/ubuntu:24.04"
 export HOST=x86_64-apple-darwin
 export PACKAGES="clang lld llvm zip"
-export XCODE_VERSION=15.0
-export XCODE_BUILD_ID=15A240d
+export XCODE_VERSION=26.1.1
+export XCODE_BUILD_ID=17B100
 export RUN_UNIT_TESTS=false
 export GOAL="install"
 export BITCOIN_CONFIG="-DREDUCE_EXPORTS=ON"

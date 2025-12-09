@@ -89,6 +89,9 @@ if [ ${#FUZZ_TARGETS[@]} -eq 0 ]; then
   exit 1
 fi
 
+# Expose the discovered targets to the run-fuzzers container.
+cp "$WORK/fuzz_targets.txt" "$OUT/fuzz_targets.txt"
+
 # Must match FuzzTargetPlaceholder in src/test/fuzz/fuzz.cpp so the python
 # patching below can locate the placeholder string.
 MAGIC_STR="d6f1a2b39c4e5d7a8b9c0d1e2f30415263748596a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00fedcba9876543210a0b1c2d3"

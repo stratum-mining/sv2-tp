@@ -36,8 +36,10 @@ struct MockInit : public interfaces::Init {
 };
 } // namespace
 
-TPTester::TPTester()
-    : m_state{std::make_shared<MockState>()}, m_mining_control{std::make_shared<MockMining>(m_state)}
+TPTester::TPTester() : TPTester(Sv2TemplateProviderOptions{.is_test = true}) {}
+
+TPTester::TPTester(Sv2TemplateProviderOptions opts)
+    : m_tp_options{opts}, m_state{std::make_shared<MockState>()}, m_mining_control{std::make_shared<MockMining>(m_state)}
 {
     // Start cap'n proto event loop on a background thread
     std::promise<mp::EventLoop*> loop_ready;

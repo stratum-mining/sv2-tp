@@ -17,11 +17,12 @@ export RUN_UNIT_TESTS="false"
 export GOAL="install"
 export CI_LIMIT_STACK_SIZE=1
 export DOWNLOAD_PREVIOUS_RELEASES="true"
+# Use -Werror as the CMake version does not support CMAKE_COMPILE_WARNING_AS_ERROR
 export BITCOIN_CONFIG="\
  -DREDUCE_EXPORTS=ON \
  -DCMAKE_BUILD_TYPE=Debug \
- -DCMAKE_C_FLAGS='-funsigned-char' \
+ -DCMAKE_C_FLAGS='-funsigned-char -Werror' \
  -DCMAKE_C_FLAGS_DEBUG='-g2 -O2' \
- -DCMAKE_CXX_FLAGS='-funsigned-char' \
+ -DCMAKE_CXX_FLAGS='-funsigned-char -Werror' \
  -DCMAKE_CXX_FLAGS_DEBUG='-g2 -O2' \
 "

@@ -4,7 +4,7 @@
 		{
 			"label": "configure (dev-mode)",
 			"type": "shell",
-			"command": "cmake -S ${workspaceFolder} -B ${workspaceFolder}/build -DWERROR=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON --preset dev-mode",
+			"command": "cmake -S ${workspaceFolder} -B ${workspaceFolder}/build -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON --preset dev-mode",
 			"problemMatcher": [
 				"$gcc"
 			],
@@ -35,7 +35,7 @@
 		{
 			"label": "configure (debug)",
 			"type": "shell",
-			"command": "cmake -S ${workspaceFolder} -B ${workspaceFolder}/build -DCMAKE_BUILD_TYPE=Debug -DWERROR=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON --preset dev-mode",
+			"command": "cmake -S ${workspaceFolder} -B ${workspaceFolder}/build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON --preset dev-mode",
 			"problemMatcher": [
 				"$gcc"
 			],

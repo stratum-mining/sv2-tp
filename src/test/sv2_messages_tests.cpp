@@ -113,6 +113,7 @@ BOOST_AUTO_TEST_CASE(Sv2NewTemplate_test)
     // U32              02000000            coinbase tx version
     // B0_255           04                  coinbase_prefix len
     //                  03012100            coinbase prefix
+    // U256             0000000000000000000000000000000000000000000000000000000000000000 - witness
     // U32              ffffffff            coinbase tx input sequence
     // U64              0040075af0750700    coinbase tx value remaining
     // U32              01000000            coinbase tx outputs count
@@ -122,7 +123,7 @@ BOOST_AUTO_TEST_CASE(Sv2NewTemplate_test)
     // U32              dbc80d00            coinbase lock time (height 903,387)
     // SEQ0_255[U256]   01                  merkle path length
     //                  1a6240823de4c8d6aaf826851bdf2b0e8d5acf7c31e8578cff4c394b5a32bd4e - merkle path
-    std::string expected{"01000000000000000000000030020000000403012100ffffffff0040075af0750700010000000c000100000000000000036a012adbc80d00011a6240823de4c8d6aaf826851bdf2b0e8d5acf7c31e8578cff4c394b5a32bd4e"};
+    std::string expected{"010000000000000000000000300200000004030121000000000000000000000000000000000000000000000000000000000000000000ffffffff0040075af0750700010000000c000100000000000000036a012adbc80d00011a6240823de4c8d6aaf826851bdf2b0e8d5acf7c31e8578cff4c394b5a32bd4e"};
 
     node::Sv2NewTemplateMsg new_template;
     new_template.m_template_id = 1;
@@ -133,6 +134,8 @@ BOOST_AUTO_TEST_CASE(Sv2NewTemplate_test)
     std::vector<uint8_t> coinbase_prefix{0x03, 0x01, 0x21, 0x00};
     CScript prefix(coinbase_prefix.begin(), coinbase_prefix.end());
     new_template.m_coinbase_prefix = prefix;
+
+    new_template.m_coinbase_witness = uint256(0);
 
     new_template.m_coinbase_tx_input_sequence = 4294967295;
     new_template.m_coinbase_tx_value_remaining = MAX_MONEY;
@@ -167,6 +170,7 @@ BOOST_AUTO_TEST_CASE(Sv2NewTemplate_MultipleOutputs_test)
     // U32              02000000            coinbase tx version
     // B0_255           04                  coinbase_prefix len
     //                  03012100            coinbase prefix
+    // U256             0000000000000000000000000000000000000000000000000000000000000000 - witness
     // U32              ffffffff            coinbase tx input sequence
     // U64              0040075af0750700    coinbase tx value remaining
     // U32              03000000            coinbase tx outputs count (3 OP_RETURN outputs, dummy filtered)
@@ -180,7 +184,7 @@ BOOST_AUTO_TEST_CASE(Sv2NewTemplate_MultipleOutputs_test)
     // U32              dbc80d00            coinbase lock time (height 903,387)
     // SEQ0_255[U256]   01                  merkle path length
     //                  1a6240823de4c8d6aaf826851bdf2b0e8d5acf7c31e8578cff4c394b5a32bd4e - merkle path
-    std::string expected{"01000000000000000000000030020000000403012100ffffffff0040075af07507000300000021006400000000000000026a51c800000000000000026a522c01000000000000026a53dbc80d00011a6240823de4c8d6aaf826851bdf2b0e8d5acf7c31e8578cff4c394b5a32bd4e"};
+    std::string expected{"010000000000000000000000300200000004030121000000000000000000000000000000000000000000000000000000000000000000ffffffff0040075af07507000300000021006400000000000000026a51c800000000000000026a522c01000000000000026a53dbc80d00011a6240823de4c8d6aaf826851bdf2b0e8d5acf7c31e8578cff4c394b5a32bd4e"};
 
     // Create realistic coinbase transaction with dummy anyone-can-spend output
     CMutableTransaction coinbase_tx;

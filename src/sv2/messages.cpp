@@ -13,6 +13,13 @@ node::Sv2NewTemplateMsg::Sv2NewTemplateMsg(const CBlockHeader& header, const CTr
 
     m_coinbase_tx_version = coinbase_tx->CURRENT_VERSION;
     m_coinbase_prefix = coinbase_tx->vin[0].scriptSig;
+    if (coinbase_tx->HasWitness()) {
+        const auto& witness_stack{coinbase_tx->vin[0].scriptWitness.stack};
+        Assert(witness_stack.size() == 1 || witness_stack[0].size() == 32);
+        m_coinbase_witness = uint256(witness_stack[0]);
+    } else {
+        m_coinbase_witness = uint256(0);
+    }
     m_coinbase_tx_input_sequence = coinbase_tx->vin[0].nSequence;
 
     // The coinbase nValue already contains the nFee + the Block Subsidy when built using CreateBlock().

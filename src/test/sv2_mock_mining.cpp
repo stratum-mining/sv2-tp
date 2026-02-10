@@ -7,6 +7,7 @@
 #include <sync.h>
 #include <cassert>
 #include <logging.h>
+#include <sv2/messages.h>
 
 namespace {
 static inline uint256 HashFromHeight(uint64_t h)
@@ -56,7 +57,8 @@ CBlockHeader MockBlockTemplate::getBlockHeader() { return block.GetBlockHeader()
 CBlock MockBlockTemplate::getBlock() { return block; }
 std::vector<CAmount> MockBlockTemplate::getTxFees() { return {}; }
 std::vector<int64_t> MockBlockTemplate::getTxSigops() { return {}; }
-CTransactionRef MockBlockTemplate::getCoinbaseTx() { return block.vtx[0]; }
+node::CoinbaseTx MockBlockTemplate::getCoinbaseTx() { return ExtractCoinbaseTx(block.vtx[0]); }
+CTransactionRef MockBlockTemplate::getCoinbaseRawTx() { return block.vtx[0]; }
 std::vector<unsigned char> MockBlockTemplate::getCoinbaseCommitment() { return {}; }
 int MockBlockTemplate::getWitnessCommitmentIndex() { return -1; }
 std::vector<uint256> MockBlockTemplate::getCoinbaseMerklePath() { return {}; }

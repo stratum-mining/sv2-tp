@@ -11,6 +11,7 @@
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <span.h>
+#include <sv2/coinbase_template.h>
 #include <streams.h>
 #include <string>
 #include <vector>
@@ -304,7 +305,7 @@ struct Sv2NewTemplateMsg
     std::vector<CTxOut> m_coinbase_tx_outputs;
 
     /**
-     * The locktime field in the coinbase transaction.
+     * The lock_time field in the coinbase transaction.
      */
     uint32_t m_coinbase_tx_locktime;
 
@@ -315,6 +316,7 @@ struct Sv2NewTemplateMsg
 
     Sv2NewTemplateMsg() = default;
     explicit Sv2NewTemplateMsg(const CBlockHeader& header, const CTransactionRef coinbase_tx, std::vector<uint256> coinbase_merkle_path, uint64_t template_id, bool future_template);
+    explicit Sv2NewTemplateMsg(const CBlockHeader& header, const node::CoinbaseTx coinbase, std::vector<uint256> coinbase_merkle_path, uint64_t template_id, bool future_template);
 
     template <typename Stream>
     void Serialize(Stream& s) const
@@ -737,5 +739,15 @@ public:
 };
 
 }
+
+/*
+ * Extract relevant fields from the dummy coinbase transaction in the template.
+ *
+ * Extracts only OP_RETURN coinbase outputs, i.e. the witness commitment. If
+ * BlockAssembler::CreateNewBlock() is patched to add more OP_RETURN outputs
+ * e.g. for merge mining, those will be included. The dummy output that spends
+ * the full reward is excluded.
+ */
+node::CoinbaseTx ExtractCoinbaseTx(const CTransactionRef coinbase_tx);
 
 #endif // BITCOIN_SV2_MESSAGES_H

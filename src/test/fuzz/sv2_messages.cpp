@@ -1,9 +1,8 @@
-// Copyright (c) 2024-present The Bitcoin Core developers
+// Copyright (c) 2026-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <sv2/messages.h>
-#include <logging.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <random.h>
@@ -12,13 +11,9 @@
 #include <test/fuzz/FuzzedDataProvider.h>
 #include <test/fuzz/fuzz.h>
 #include <test/fuzz/check_globals.h>
-#include <test/sv2_test_setup.h>
-#include <uint256.h>
+#include <test/fuzz/sv2_fuzz_util.h>
 
 #include <cstdint>
-#include <cstdlib>
-#include <functional>
-#include <string_view>
 #include <vector>
 
 using node::Sv2MsgType;
@@ -32,71 +27,30 @@ using node::Sv2SetupConnectionErrorMsg;
 using node::Sv2SetNewPrevHashMsg;
 using node::Sv2RequestTransactionDataSuccessMsg;
 using node::Sv2RequestTransactionDataErrorMsg;
+using node::Sv2NewTemplateMsg;
 using node::Sv2NetMsg;
-
-// Exposed by the fuzz harness to pass through double-dash arguments.
-extern const std::function<std::vector<const char*>()> G_TEST_COMMAND_LINE_ARGUMENTS;
 
 namespace {
 
-void Initialize()
-{
-    // Add test context for debugging. Usage:
-    // --debug=sv2 --loglevel=sv2:trace
-    static const auto testing_setup = std::make_unique<const Sv2BasicTestingSetup>();
-
-    // Optional: enable console logging when requested via double-dash args.
-    bool want_console{false};
-    bool want_sv2_debug{false};
-    bool want_sv2_trace{false};
-    if (G_TEST_COMMAND_LINE_ARGUMENTS) {
-        for (const char* arg : G_TEST_COMMAND_LINE_ARGUMENTS()) {
-            if (!arg) continue;
-            std::string_view s{arg};
-            if (s == "--printtoconsole" || s == "--printtoconsole=1") want_console = true;
-            if (s == "--debug=sv2" || s == "--debug=1" || s == "--debug=all") want_sv2_debug = true;
-            if (s == "--loglevel=sv2:trace" || s == "--loglevel=trace") want_sv2_trace = true;
-        }
-    }
-    if (want_console || std::getenv("SV2_FUZZ_LOG")) {
-        LogInstance().m_print_to_console = true;
-        LogInstance().EnableCategory(BCLog::SV2);
-        if (want_sv2_trace) {
-            LogInstance().SetCategoryLogLevel({{BCLog::SV2, BCLog::Level::Trace}});
-        } else if (want_sv2_debug || std::getenv("SV2_FUZZ_LOG_DEBUG")) {
-            LogInstance().SetCategoryLogLevel({{BCLog::SV2, BCLog::Level::Debug}});
-        }
-        LogInstance().StartLogging();
-    }
-}
-
-// Helper to generate a fuzzed string with bounded length
+// Helper to generate a fuzzed string with bounded length.
 std::string FuzzedString(FuzzedDataProvider& provider, size_t max_len = 255)
 {
     size_t len = provider.ConsumeIntegralInRange<size_t>(0, max_len);
     return provider.ConsumeBytesAsString(len);
 }
 
-// Helper to generate a fuzzed uint256
-uint256 FuzzedUint256(FuzzedDataProvider& provider)
-{
-    auto bytes = provider.ConsumeBytes<uint8_t>(32);
-    bytes.resize(32);
-    uint256 result;
-    memcpy(result.begin(), bytes.data(), 32);
-    return result;
-}
-
 } // namespace
 
-// Fuzz Sv2NetHeader parsing - tests the 24-bit length encoding
-FUZZ_TARGET(sv2_net_header, .init = Initialize)
+// Fuzz Sv2NetHeader parsing - tests the 24-bit length encoding.
+FUZZ_TARGET(sv2_net_header, .init = Sv2FuzzInitialize)
 {
     const CheckGlobals check_globals{};
     SeedRandomStateForTest(SeedRand::ZEROS);
     FuzzedDataProvider provider(buffer.data(), buffer.size());
 
-    // Test deserialization of fuzzed header bytes
+    // Test deserialization of fuzzed header bytes.
+    // The try/catch is intentional: the fuzzer looks for memory errors and
+    // undefined behavior (caught by sanitizers), not parse exceptions.
     if (provider.remaining_bytes() >= 6) {
         DataStream ss{};
         auto header_bytes = provider.ConsumeBytes<uint8_t>(6);
@@ -113,8 +67,8 @@ FUZZ_TARGET(sv2_net_header, .init = Initialize)
             // Roundtrip: serialize and compare
             DataStream ss_out{};
             ss_out << header;
-        } catch (const std::exception&) {
-            // Parsing failures are expected for malformed input
+        } catch (const std::ios_base::failure&) {
+            // Stream read failures are expected for malformed input
         }
     }
 
@@ -133,101 +87,109 @@ FUZZ_TARGET(sv2_net_header, .init = Initialize)
     assert(header_rt.m_msg_len == msg_len);
 }
 
-// Fuzz Sv2SetupConnectionMsg deserialization (client -> TP message)
-FUZZ_TARGET(sv2_setup_connection, .init = Initialize)
-{
-    const CheckGlobals check_globals{};
-    SeedRandomStateForTest(SeedRand::ZEROS);
-    FuzzedDataProvider provider(buffer.data(), buffer.size());
-
-    // Test parsing potentially malformed SetupConnection messages
-    DataStream ss{};
-
-    // Build a fuzzed message
-    ss << provider.ConsumeIntegral<uint8_t>();  // m_protocol
-    ss << provider.ConsumeIntegral<uint16_t>(); // m_min_version
-    ss << provider.ConsumeIntegral<uint16_t>(); // m_max_version
-    ss << provider.ConsumeIntegral<uint32_t>(); // m_flags
-    ss << FuzzedString(provider);               // m_endpoint_host
-    ss << provider.ConsumeIntegral<uint16_t>(); // m_endpoint_port
-    ss << FuzzedString(provider);               // m_vendor
-    ss << FuzzedString(provider);               // m_hardware_version
-    ss << FuzzedString(provider);               // m_firmware
-    ss << FuzzedString(provider);               // m_device_id
-
-    try {
-        Sv2SetupConnectionMsg msg;
-        ss >> msg;
-
-        // Verify fields were parsed
-        (void)msg.m_protocol;
-        (void)msg.m_min_version;
-        (void)msg.m_max_version;
-        (void)msg.m_flags;
-        (void)msg.m_endpoint_host;
-        (void)msg.m_endpoint_port;
-        (void)msg.m_vendor;
-        (void)msg.m_hardware_version;
-        (void)msg.m_firmware;
-        (void)msg.m_device_id;
-    } catch (const std::exception&) {
-        // Parsing failures are expected
-    }
-}
-
-// Fuzz Sv2CoinbaseOutputConstraintsMsg (client -> TP message)
-FUZZ_TARGET(sv2_coinbase_output_constraints, .init = Initialize)
+// Fuzz Sv2SetupConnectionMsg deserialization (client -> TP message).
+// We construct a well-formed stream, so deserialization must succeed.
+FUZZ_TARGET(sv2_setup_connection, .init = Sv2FuzzInitialize)
 {
     const CheckGlobals check_globals{};
     SeedRandomStateForTest(SeedRand::ZEROS);
     FuzzedDataProvider provider(buffer.data(), buffer.size());
 
     DataStream ss{};
-    ss << provider.ConsumeIntegral<uint32_t>(); // m_coinbase_output_max_additional_size
 
-    // Optionally include the sigops field (added March 2025)
-    if (provider.ConsumeBool()) {
-        ss << provider.ConsumeIntegral<uint16_t>(); // m_coinbase_output_max_additional_sigops
-    }
+    // Build a fuzzed message matching the Unserialize field order
+    uint8_t protocol = provider.ConsumeIntegral<uint8_t>();
+    uint16_t min_version = provider.ConsumeIntegral<uint16_t>();
+    uint16_t max_version = provider.ConsumeIntegral<uint16_t>();
+    uint32_t flags = provider.ConsumeIntegral<uint32_t>();
+    std::string endpoint_host = FuzzedString(provider);
+    uint16_t endpoint_port = provider.ConsumeIntegral<uint16_t>();
+    std::string vendor = FuzzedString(provider);
+    std::string hardware_version = FuzzedString(provider);
+    std::string firmware = FuzzedString(provider);
+    std::string device_id = FuzzedString(provider);
 
-    try {
-        Sv2CoinbaseOutputConstraintsMsg msg;
-        ss >> msg;
+    ss << protocol << min_version << max_version << flags
+       << endpoint_host << endpoint_port
+       << vendor << hardware_version << firmware << device_id;
 
-        // Verify parsing
-        (void)msg.m_coinbase_output_max_additional_size;
-        (void)msg.m_coinbase_output_max_additional_sigops;
+    Sv2SetupConnectionMsg msg;
+    ss >> msg;
 
-        // Roundtrip test
-        DataStream ss_out{};
-        ss_out << msg;
-    } catch (const std::exception&) {
-        // Expected for malformed input
-    }
+    assert(msg.m_protocol == protocol);
+    assert(msg.m_min_version == min_version);
+    assert(msg.m_max_version == max_version);
+    assert(msg.m_flags == flags);
+    assert(msg.m_endpoint_host == endpoint_host);
+    assert(msg.m_endpoint_port == endpoint_port);
+    assert(msg.m_vendor == vendor);
+    assert(msg.m_hardware_version == hardware_version);
+    assert(msg.m_firmware == firmware);
+    assert(msg.m_device_id == device_id);
 }
 
-// Fuzz Sv2RequestTransactionDataMsg (client -> TP message)
-FUZZ_TARGET(sv2_request_transaction_data, .init = Initialize)
+// Fuzz Sv2CoinbaseOutputConstraintsMsg deserialization (client -> TP message).
+// We construct a well-formed stream; the Unserialize method internally handles
+// the optional sigops field with its own catch, so no outer catch is needed.
+FUZZ_TARGET(sv2_coinbase_output_constraints, .init = Sv2FuzzInitialize)
 {
     const CheckGlobals check_globals{};
     SeedRandomStateForTest(SeedRand::ZEROS);
     FuzzedDataProvider provider(buffer.data(), buffer.size());
 
-    DataStream ss{};
-    ss << provider.ConsumeIntegral<uint64_t>(); // m_template_id
+    uint32_t max_additional_size = provider.ConsumeIntegral<uint32_t>();
+    bool include_sigops = provider.ConsumeBool();
+    uint16_t sigops = provider.ConsumeIntegral<uint16_t>();
 
-    try {
-        Sv2RequestTransactionDataMsg msg;
-        ss >> msg;
-        (void)msg.m_template_id;
-    } catch (const std::exception&) {
-        // Expected
+    DataStream ss{};
+    ss << max_additional_size;
+    if (include_sigops) {
+        ss << sigops;
     }
+
+    Sv2CoinbaseOutputConstraintsMsg msg;
+    ss >> msg;
+
+    assert(msg.m_coinbase_output_max_additional_size == max_additional_size);
+    if (include_sigops) {
+        assert(msg.m_coinbase_output_max_additional_sigops == sigops);
+    } else {
+        // Unserialize defaults to 400 when sigops field is absent
+        assert(msg.m_coinbase_output_max_additional_sigops == 400);
+    }
+
+    // Roundtrip: serialize then deserialize again and compare
+    DataStream ss_rt{};
+    ss_rt << msg;
+    Sv2CoinbaseOutputConstraintsMsg msg_rt;
+    ss_rt >> msg_rt;
+    assert(msg.m_coinbase_output_max_additional_size == msg_rt.m_coinbase_output_max_additional_size);
+    assert(msg.m_coinbase_output_max_additional_sigops == msg_rt.m_coinbase_output_max_additional_sigops);
 }
 
-// Fuzz Sv2SubmitSolutionMsg deserialization (client -> TP message)
-// This is security-critical as it contains a coinbase transaction
-FUZZ_TARGET(sv2_submit_solution, .init = Initialize)
+// Fuzz Sv2RequestTransactionDataMsg deserialization (client -> TP message).
+// We write exactly 8 bytes; deserialization must succeed.
+FUZZ_TARGET(sv2_request_transaction_data, .init = Sv2FuzzInitialize)
+{
+    const CheckGlobals check_globals{};
+    SeedRandomStateForTest(SeedRand::ZEROS);
+    FuzzedDataProvider provider(buffer.data(), buffer.size());
+
+    uint64_t template_id = provider.ConsumeIntegral<uint64_t>();
+
+    DataStream ss{};
+    ss << template_id;
+
+    Sv2RequestTransactionDataMsg msg;
+    ss >> msg;
+    assert(msg.m_template_id == template_id);
+}
+
+// Fuzz Sv2SubmitSolutionMsg deserialization (client -> TP message).
+// This is security-critical as it contains a coinbase transaction.
+// The try/catch is intentional: the fuzzer looks for memory errors and
+// undefined behavior (caught by sanitizers), not parse exceptions.
+FUZZ_TARGET(sv2_submit_solution, .init = Sv2FuzzInitialize)
 {
     const CheckGlobals check_globals{};
     SeedRandomStateForTest(SeedRand::ZEROS);
@@ -255,13 +217,14 @@ FUZZ_TARGET(sv2_submit_solution, .init = Initialize)
         (void)msg.m_header_timestamp;
         (void)msg.m_header_nonce;
         (void)msg.m_coinbase_tx;
-    } catch (const std::exception&) {
-        // Expected for malformed transactions
+    } catch (const std::ios_base::failure&) {
+        // Stream read failures are expected for malformed transactions
     }
 }
 
-// Fuzz Sv2SetupConnectionSuccessMsg roundtrip (TP -> client message)
-FUZZ_TARGET(sv2_setup_connection_success, .init = Initialize)
+// Fuzz Sv2SetupConnectionSuccessMsg serialization (TP -> client message).
+// Construction from valid fuzzed values should not throw.
+FUZZ_TARGET(sv2_setup_connection_success, .init = Sv2FuzzInitialize)
 {
     const CheckGlobals check_globals{};
     SeedRandomStateForTest(SeedRand::ZEROS);
@@ -276,12 +239,17 @@ FUZZ_TARGET(sv2_setup_connection_success, .init = Initialize)
     DataStream ss{};
     ss << msg;
 
-    // Verify serialization produced expected size
-    assert(ss.size() == sizeof(uint16_t) + sizeof(uint32_t));
+    // Roundtrip: read back serialized fields and verify
+    uint16_t rt_version;
+    uint32_t rt_flags;
+    ss >> rt_version >> rt_flags;
+    assert(rt_version == used_version);
+    assert(rt_flags == flags);
 }
 
-// Fuzz Sv2SetupConnectionErrorMsg roundtrip (TP -> client message)
-FUZZ_TARGET(sv2_setup_connection_error, .init = Initialize)
+// Fuzz Sv2SetupConnectionErrorMsg serialization (TP -> client message).
+// Construction from valid fuzzed values should not throw.
+FUZZ_TARGET(sv2_setup_connection_error, .init = Sv2FuzzInitialize)
 {
     const CheckGlobals check_globals{};
     SeedRandomStateForTest(SeedRand::ZEROS);
@@ -289,16 +257,25 @@ FUZZ_TARGET(sv2_setup_connection_error, .init = Initialize)
 
     uint32_t flags = provider.ConsumeIntegral<uint32_t>();
     std::string error_code = FuzzedString(provider);
+    std::string error_code_expect = error_code;
 
     Sv2SetupConnectionErrorMsg msg(flags, std::move(error_code));
 
     // Serialize
     DataStream ss{};
     ss << msg;
+
+    // Roundtrip: read back serialized fields and verify
+    uint32_t rt_flags;
+    std::string rt_error;
+    ss >> rt_flags >> rt_error;
+    assert(rt_flags == flags);
+    assert(rt_error == error_code_expect);
 }
 
-// Fuzz Sv2SetNewPrevHashMsg roundtrip (TP -> client message)
-FUZZ_TARGET(sv2_set_new_prev_hash, .init = Initialize)
+// Fuzz Sv2SetNewPrevHashMsg serialization (TP -> client message).
+// Construction from valid fuzzed values should not throw.
+FUZZ_TARGET(sv2_set_new_prev_hash, .init = Sv2FuzzInitialize)
 {
     const CheckGlobals check_globals{};
     SeedRandomStateForTest(SeedRand::ZEROS);
@@ -307,8 +284,8 @@ FUZZ_TARGET(sv2_set_new_prev_hash, .init = Initialize)
     // Create message with fuzzed values
     CBlockHeader header;
     header.nVersion = provider.ConsumeIntegral<int32_t>();
-    header.hashPrevBlock = FuzzedUint256(provider);
-    header.hashMerkleRoot = FuzzedUint256(provider);
+    header.hashPrevBlock = ConsumeUint256(provider);
+    header.hashMerkleRoot = ConsumeUint256(provider);
     header.nTime = provider.ConsumeIntegral<uint32_t>();
     header.nBits = provider.ConsumeIntegral<uint32_t>();
     header.nNonce = provider.ConsumeIntegral<uint32_t>();
@@ -321,15 +298,22 @@ FUZZ_TARGET(sv2_set_new_prev_hash, .init = Initialize)
     DataStream ss{};
     ss << msg;
 
-    // Verify fields
-    assert(msg.m_template_id == template_id);
-    assert(msg.m_prev_hash == header.hashPrevBlock);
-    assert(msg.m_header_timestamp == header.nTime);
-    assert(msg.m_nBits == header.nBits);
+    // Roundtrip: read back serialized fields and verify
+    uint64_t rt_template_id;
+    uint256 rt_prev_hash;
+    uint32_t rt_timestamp;
+    uint32_t rt_nbits;
+    uint256 rt_target;
+    ss >> rt_template_id >> rt_prev_hash >> rt_timestamp >> rt_nbits >> rt_target;
+    assert(rt_template_id == template_id);
+    assert(rt_prev_hash == header.hashPrevBlock);
+    assert(rt_timestamp == header.nTime);
+    assert(rt_nbits == header.nBits);
 }
 
-// Fuzz Sv2RequestTransactionDataSuccessMsg (TP -> client message)
-FUZZ_TARGET(sv2_request_transaction_data_success, .init = Initialize)
+// Fuzz Sv2RequestTransactionDataSuccessMsg serialization (TP -> client message).
+// Construction from valid fuzzed values should not throw.
+FUZZ_TARGET(sv2_request_transaction_data_success, .init = Sv2FuzzInitialize)
 {
     const CheckGlobals check_globals{};
     SeedRandomStateForTest(SeedRand::ZEROS);
@@ -350,12 +334,15 @@ FUZZ_TARGET(sv2_request_transaction_data_success, .init = Initialize)
     DataStream ss{};
     ss << msg;
 
-    // Verify template_id preserved
-    assert(msg.m_template_id == template_id);
+    // Roundtrip: read back template_id from serialized stream
+    uint64_t rt_template_id;
+    ss >> rt_template_id;
+    assert(rt_template_id == template_id);
 }
 
-// Fuzz Sv2RequestTransactionDataErrorMsg (TP -> client message)
-FUZZ_TARGET(sv2_request_transaction_data_error, .init = Initialize)
+// Fuzz Sv2RequestTransactionDataErrorMsg serialization (TP -> client message).
+// Construction from valid fuzzed values should not throw.
+FUZZ_TARGET(sv2_request_transaction_data_error, .init = Sv2FuzzInitialize)
 {
     const CheckGlobals check_globals{};
     SeedRandomStateForTest(SeedRand::ZEROS);
@@ -363,16 +350,24 @@ FUZZ_TARGET(sv2_request_transaction_data_error, .init = Initialize)
 
     uint64_t template_id = provider.ConsumeIntegral<uint64_t>();
     std::string error_code = FuzzedString(provider);
+    std::string error_code_expect = error_code;
 
     Sv2RequestTransactionDataErrorMsg msg(template_id, std::move(error_code));
 
     // Serialize
     DataStream ss{};
     ss << msg;
+
+    // Roundtrip: read back serialized fields and verify
+    uint64_t rt_template_id;
+    std::string rt_error;
+    ss >> rt_template_id >> rt_error;
+    assert(rt_template_id == template_id);
+    assert(rt_error == error_code_expect);
 }
 
-// Fuzz Sv2NetMsg wrapping/unwrapping
-FUZZ_TARGET(sv2_net_msg, .init = Initialize)
+// Fuzz Sv2NetMsg wrapping/unwrapping.
+FUZZ_TARGET(sv2_net_msg, .init = Sv2FuzzInitialize)
 {
     const CheckGlobals check_globals{};
     SeedRandomStateForTest(SeedRand::ZEROS);
@@ -400,4 +395,144 @@ FUZZ_TARGET(sv2_net_msg, .init = Initialize)
     Sv2NetMsg net_msg_rt(Sv2MsgType::SETUP_CONNECTION_ERROR, {});
     ss >> net_msg_rt;
     assert(net_msg_rt.m_msg_type == net_msg.m_msg_type);
+}
+
+// Fuzz Sv2NewTemplateMsg serialization (TP -> client message).
+// This is the most complex SV2 message with variable-length fields.
+FUZZ_TARGET(sv2_new_template, .init = Sv2FuzzInitialize)
+{
+    const CheckGlobals check_globals{};
+    SeedRandomStateForTest(SeedRand::ZEROS);
+    FuzzedDataProvider provider(buffer.data(), buffer.size());
+
+    // Populate message fields with fuzzed values
+    Sv2NewTemplateMsg msg;
+    msg.m_template_id = provider.ConsumeIntegral<uint64_t>();
+    msg.m_future_template = provider.ConsumeBool();
+    msg.m_version = provider.ConsumeIntegral<uint32_t>();
+    msg.m_coinbase_tx_version = provider.ConsumeIntegral<uint32_t>();
+
+    // Coinbase prefix: up to 8 bytes per spec
+    size_t prefix_len = provider.ConsumeIntegralInRange<size_t>(0, 8);
+    auto prefix_bytes = provider.ConsumeBytes<uint8_t>(prefix_len);
+    msg.m_coinbase_prefix = CScript(prefix_bytes.begin(), prefix_bytes.end());
+
+    msg.m_coinbase_tx_input_sequence = provider.ConsumeIntegral<uint32_t>();
+    msg.m_coinbase_tx_value_remaining = provider.ConsumeIntegral<uint64_t>();
+
+    // Generate a small number of coinbase outputs
+    uint32_t num_outputs = provider.ConsumeIntegralInRange<uint32_t>(0, 4);
+    msg.m_coinbase_tx_outputs_count = num_outputs;
+    for (uint32_t i = 0; i < num_outputs && provider.remaining_bytes() > 0; i++) {
+        CAmount value = provider.ConsumeIntegral<int64_t>();
+        size_t script_len = provider.ConsumeIntegralInRange<size_t>(0, 100);
+        auto script_bytes = provider.ConsumeBytes<uint8_t>(script_len);
+        CScript script(script_bytes.begin(), script_bytes.end());
+        msg.m_coinbase_tx_outputs.emplace_back(value, script);
+    }
+    // Ensure count matches actual vector size
+    msg.m_coinbase_tx_outputs_count = static_cast<uint32_t>(msg.m_coinbase_tx_outputs.size());
+
+    msg.m_coinbase_tx_locktime = provider.ConsumeIntegral<uint32_t>();
+
+    // Generate a small merkle path
+    size_t path_len = provider.ConsumeIntegralInRange<size_t>(0, 8);
+    for (size_t i = 0; i < path_len && provider.remaining_bytes() >= 32; i++) {
+        msg.m_merkle_path.push_back(ConsumeUint256(provider));
+    }
+
+    // Serialize
+    DataStream ss{};
+    ss << msg;
+
+    // Read back fixed fields and verify
+    uint64_t rt_template_id;
+    bool rt_future_template;
+    uint32_t rt_version;
+    uint32_t rt_coinbase_tx_version;
+    ss >> rt_template_id >> rt_future_template >> rt_version >> rt_coinbase_tx_version;
+    assert(rt_template_id == msg.m_template_id);
+    assert(rt_future_template == msg.m_future_template);
+    assert(rt_version == msg.m_version);
+    assert(rt_coinbase_tx_version == msg.m_coinbase_tx_version);
+}
+
+// -- Raw-bytes deserialization targets ----------------------------------------
+//
+// These feed arbitrary fuzzer bytes directly into the deserializer, testing the
+// full deserialization attack surface. The try/catch is essential: most random
+// inputs will fail parsing, but sanitizers (ASan/UBSan/MSan) catch any memory
+// errors or undefined behavior triggered along the way.
+
+FUZZ_TARGET(sv2_setup_connection_raw, .init = Sv2FuzzInitialize)
+{
+    const CheckGlobals check_globals{};
+    SeedRandomStateForTest(SeedRand::ZEROS);
+
+    DataStream ds{buffer};
+    try {
+        Sv2SetupConnectionMsg msg;
+        ds >> msg;
+    } catch (const std::ios_base::failure&) {
+    }
+}
+
+FUZZ_TARGET(sv2_coinbase_output_constraints_raw, .init = Sv2FuzzInitialize)
+{
+    const CheckGlobals check_globals{};
+    SeedRandomStateForTest(SeedRand::ZEROS);
+
+    DataStream ds{buffer};
+    try {
+        Sv2CoinbaseOutputConstraintsMsg msg;
+        ds >> msg;
+
+        // If deserialization succeeded, verify roundtrip invariant
+        DataStream ss_rt{};
+        ss_rt << msg;
+        Sv2CoinbaseOutputConstraintsMsg msg_rt;
+        ss_rt >> msg_rt;
+        assert(msg.m_coinbase_output_max_additional_size == msg_rt.m_coinbase_output_max_additional_size);
+        assert(msg.m_coinbase_output_max_additional_sigops == msg_rt.m_coinbase_output_max_additional_sigops);
+    } catch (const std::ios_base::failure&) {
+    }
+}
+
+FUZZ_TARGET(sv2_request_transaction_data_raw, .init = Sv2FuzzInitialize)
+{
+    const CheckGlobals check_globals{};
+    SeedRandomStateForTest(SeedRand::ZEROS);
+
+    DataStream ds{buffer};
+    try {
+        Sv2RequestTransactionDataMsg msg;
+        ds >> msg;
+    } catch (const std::ios_base::failure&) {
+    }
+}
+
+FUZZ_TARGET(sv2_submit_solution_raw, .init = Sv2FuzzInitialize)
+{
+    const CheckGlobals check_globals{};
+    SeedRandomStateForTest(SeedRand::ZEROS);
+
+    DataStream ds{buffer};
+    try {
+        Sv2SubmitSolutionMsg msg;
+        ds >> msg;
+    } catch (const std::ios_base::failure&) {
+    }
+}
+
+FUZZ_TARGET(sv2_net_msg_raw, .init = Sv2FuzzInitialize)
+{
+    const CheckGlobals check_globals{};
+    SeedRandomStateForTest(SeedRand::ZEROS);
+
+    DataStream ds{buffer};
+    try {
+        Sv2NetMsg msg(Sv2MsgType::SETUP_CONNECTION, {});
+        ds >> msg;
+    } catch (const std::ios_base::failure&) {
+    }
 }

@@ -9,56 +9,11 @@
 #include <test/fuzz/FuzzedDataProvider.h>
 #include <test/fuzz/check_globals.h>
 #include <test/fuzz/fuzz.h>
-#include <test/sv2_test_setup.h>
-#include <functional>
-#include <string_view>
-#include <cstddef>
+#include <test/fuzz/sv2_fuzz_util.h>
 
-#include <cstdlib>
+#include <cstddef>
 #include <cstdint>
 #include <util/vector.h>
-
-// Exposed by the fuzz harness to pass through double-dash arguments.
-extern const std::function<std::vector<const char*>()> G_TEST_COMMAND_LINE_ARGUMENTS;
-
-namespace {
-
-void Initialize()
-{
-    // Add test context for debugging. Usage:
-    // --debug=sv2 --loglevel=sv2:trace
-    static const auto testing_setup = std::make_unique<const Sv2BasicTestingSetup>();
-
-    // Optional: enable console logging when requested via double-dash args.
-    // Recognized flags: --printtoconsole=1, --debug=sv2, --loglevel=sv2:trace
-    // These flags are passed through the fuzz harness and exposed via G_TEST_COMMAND_LINE_ARGUMENTS.
-    bool want_console{false};
-    bool want_sv2_debug{false};
-    bool want_sv2_trace{false};
-    if (G_TEST_COMMAND_LINE_ARGUMENTS) {
-        for (const char* arg : G_TEST_COMMAND_LINE_ARGUMENTS()) {
-            if (!arg) continue;
-            std::string_view s{arg};
-            // Accept both forms in case a caller wants to force console logging explicitly.
-            if (s == "--printtoconsole" || s == "--printtoconsole=1") want_console = true;
-            if (s == "--debug=sv2" || s == "--debug=1" || s == "--debug=all") want_sv2_debug = true;
-            if (s == "--loglevel=sv2:trace" || s == "--loglevel=trace") want_sv2_trace = true;
-        }
-    }
-    if (want_console || std::getenv("SV2_FUZZ_LOG")) {
-        // Turn on console logging and ensure SV2 category is enabled at the desired level.
-        LogInstance().m_print_to_console = true;
-        LogInstance().EnableCategory(BCLog::SV2);
-        if (want_sv2_trace) {
-            LogInstance().SetCategoryLogLevel({{BCLog::SV2, BCLog::Level::Trace}});
-        } else if (want_sv2_debug || std::getenv("SV2_FUZZ_LOG_DEBUG")) {
-            LogInstance().SetCategoryLogLevel({{BCLog::SV2, BCLog::Level::Debug}});
-        }
-        // Start logging to flush any buffered messages.
-        LogInstance().StartLogging();
-    }
-}
-} // namespace
 
 bool MaybeDamage(FuzzedDataProvider& provider, std::vector<std::byte>& transport)
 {
@@ -77,7 +32,7 @@ bool MaybeDamage(FuzzedDataProvider& provider, std::vector<std::byte>& transport
     return damage;
 }
 
-FUZZ_TARGET(sv2_noise_cipher_roundtrip, .init = Initialize)
+FUZZ_TARGET(sv2_noise_cipher_roundtrip, .init = Sv2FuzzInitialize)
 {
     const CheckGlobals check_globals{};
     SeedRandomStateForTest(SeedRand::ZEROS);

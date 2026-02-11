@@ -33,80 +33,13 @@ BOOST_AUTO_TEST_CASE(client_tests)
 
     tester.handshake();
 
-    // After the handshake the client must send a SetupConnection message to the
-    // Template Provider.
+    BOOST_TEST_MESSAGE("Handshake done, send SetupConnection and CoinbaseOutputConstraints");
+    tester.SendSetupAndCoinbaseConstraints();
 
-    tester.handshake();
-    BOOST_TEST_MESSAGE("Handshake done, send SetupConnectionMsg");
-
-    node::Sv2NetMsg setup{tester.SetupConnectionMsg()};
-    tester.receiveMessage(setup);
-    // SetupConnection.Success is 6 bytes
-    BOOST_REQUIRE_EQUAL(tester.PeerReceiveBytes(), SV2_HEADER_ENCRYPTED_SIZE + 6 + Poly1305::TAGLEN);
-
-    // There should be no block templates before any client gave us their coinbase
-    // output data size:
-    BOOST_REQUIRE(tester.GetBlockTemplateCount() == 0);
-
-    std::vector<uint8_t> coinbase_output_constraint_bytes{
-        0x01, 0x00, 0x00, 0x00, // coinbase_output_max_additional_size
-        0x00, 0x00              // coinbase_output_max_sigops
-    };
-    node::Sv2NetMsg msg{node::Sv2MsgType::COINBASE_OUTPUT_CONSTRAINTS, std::move(coinbase_output_constraint_bytes)};
-    tester.receiveMessage(msg);
     BOOST_TEST_MESSAGE("The reply should be NewTemplate and SetNewPrevHash");
-    // Payload sizes for fixed-layout SV2 messages used in this test
-    constexpr size_t SV2_SET_NEW_PREV_HASH_MESSAGE_SIZE = 8 + 32 + 4 + 4 + 32; // = 80
-    constexpr size_t SV2_NEW_TEMPLATE_MESSAGE_SIZE =
-        8 +                 // template_id
-        1 +                 // future_template
-        4 +                 // version
-        4 +                 // coinbase_tx_version
-        2 +                 // coinbase_prefix (CompactSize(1) + 1-byte OP_0)
-        4 +                 // coinbase_tx_input_sequence
-        8 +                 // coinbase_tx_value_remaining
-        4 +                 // coinbase_tx_outputs_count (2 - mock creates 3, only 2 OP_RETURN outputs pass filter)
-        2 + 56 +            // B0_64K: length prefix (2 bytes) + 2 outputs (witness commitment 43 bytes + merge mining 13 bytes)
-        4 +                 // coinbase_tx_locktime
-        1;                  // merkle_path count (CompactSize(0))
+    tester.ReceiveTemplatePair();
 
-    // Two messages (SetNewPrevHash + NewTemplate) may arrive in one read or sequentially.
-    const size_t expected_set_new_prev_hash = SV2_HEADER_ENCRYPTED_SIZE + SV2_SET_NEW_PREV_HASH_MESSAGE_SIZE + Poly1305::TAGLEN;
-    const size_t expected_new_template = SV2_HEADER_ENCRYPTED_SIZE + SV2_NEW_TEMPLATE_MESSAGE_SIZE + Poly1305::TAGLEN;
-    const size_t expected_pair_bytes = expected_set_new_prev_hash + expected_new_template;
-
-    const auto expect_template_pair = [&](const char* context) {
-        size_t accumulated = 0;
-        bool seen_prev_hash = false;
-        bool seen_new_template = false;
-        int iterations = 0;
-
-        while (accumulated < expected_pair_bytes) {
-            size_t chunk = tester.PeerReceiveBytes();
-            accumulated += chunk;
-            ++iterations;
-
-            if (chunk == expected_set_new_prev_hash) {
-                seen_prev_hash = true;
-            } else if (chunk == expected_new_template) {
-                seen_new_template = true;
-            } else if (chunk == expected_pair_bytes) {
-                seen_prev_hash = true;
-                seen_new_template = true;
-                break;
-            } else {
-                BOOST_FAIL(std::string("Unexpected message size while receiving ") + context);
-            }
-
-            BOOST_REQUIRE_MESSAGE(iterations <= 2, std::string("Too many fragments for ") + context);
-        }
-
-        BOOST_REQUIRE_MESSAGE(seen_prev_hash, std::string("Missing SetNewPrevHash during ") + context);
-        BOOST_REQUIRE_MESSAGE(seen_new_template, std::string("Missing NewTemplate during ") + context);
-        BOOST_REQUIRE_MESSAGE(accumulated == expected_pair_bytes, std::string("Incomplete response for ") + context);
-    };
-
-    expect_template_pair("initial template broadcast");
+    const size_t expected_new_template = SV2_HEADER_ENCRYPTED_SIZE + TPTester::SV2_NEW_TEMPLATE_MSG_SIZE + Poly1305::TAGLEN;
 
     // There should now be one template
     BOOST_REQUIRE_EQUAL(tester.GetBlockTemplateCount(), 1);
@@ -133,7 +66,7 @@ BOOST_AUTO_TEST_CASE(client_tests)
     BOOST_TEST_MESSAGE("Receive NewTemplate (fee increase)");
     // One NewTemplate follows: header + payload + payload tag
     size_t bytes_fee_nt = tester.PeerReceiveBytes();
-    BOOST_REQUIRE_EQUAL(bytes_fee_nt, SV2_HEADER_ENCRYPTED_SIZE + SV2_NEW_TEMPLATE_MESSAGE_SIZE + Poly1305::TAGLEN);
+    BOOST_REQUIRE_EQUAL(bytes_fee_nt, expected_new_template);
 
     // Get the latest template id
     uint64_t template_id = 0;
@@ -192,7 +125,7 @@ BOOST_AUTO_TEST_CASE(client_tests)
 
     // Expect our peer to receive a NewTemplate message
     size_t bytes_second_nt = tester.PeerReceiveBytes();
-    BOOST_REQUIRE_EQUAL(bytes_second_nt, SV2_HEADER_ENCRYPTED_SIZE + SV2_NEW_TEMPLATE_MESSAGE_SIZE + Poly1305::TAGLEN);
+    BOOST_REQUIRE_EQUAL(bytes_second_nt, expected_new_template);
 
     // Check that there's a new template
     BOOST_REQUIRE_EQUAL(tester.GetBlockTemplateCount(), 3);
@@ -223,7 +156,7 @@ BOOST_AUTO_TEST_CASE(client_tests)
     BOOST_REQUIRE(tester.m_mining_control->WaitForTemplateSeq(seq_after_second_nt + 1));
 
     // We should send out another NewTemplate and SetNewPrevHash (two messages)
-    expect_template_pair("new tip template broadcast");
+    tester.ReceiveTemplatePair();
     // The SetNewPrevHash message is redundant
     // TODO: don't send it?
     // Background: in the future we want to send an empty or optimistic template
@@ -254,6 +187,69 @@ BOOST_AUTO_TEST_CASE(client_tests)
     BOOST_REQUIRE(tester.PeerReceiveBytes() != request_transaction_data_success_bytes);
 
     // Interrupt waitNext()
+    tester.m_mining_control->Shutdown();
+}
+
+// Test the fee-based rate limiting timer behavior.
+// This test uses is_test=false to exercise the actual timer logic that is
+// normally bypassed in tests. The timer blocks fee-based template updates
+// until fee_check_interval seconds have passed (-sv2interval flag).
+BOOST_AUTO_TEST_CASE(fee_timer_blocking_test)
+{
+    // Clear mock time so the Timer uses real wall-clock time.
+    // The test fixture sets mock time, which would prevent the timer from
+    // advancing without explicit SetMockTime calls.
+    SetMockTime(std::chrono::seconds{0});
+
+    // Use is_test=false to test actual timer behavior.
+    // Use a short fee_check_interval (2s) to keep the test fast.
+    Sv2TemplateProviderOptions opts;
+    opts.is_test = false;
+    opts.fee_check_interval = std::chrono::seconds{2};
+    TPTester tester{opts};
+
+    tester.handshake();
+    tester.SendSetupAndCoinbaseConstraints();
+    tester.ReceiveTemplatePair();
+
+    const size_t expected_new_template = SV2_HEADER_ENCRYPTED_SIZE + TPTester::SV2_NEW_TEMPLATE_MSG_SIZE + Poly1305::TAGLEN;
+
+    // Timer was reset after the initial template was sent.
+    uint64_t seq = tester.m_mining_control->GetTemplateSeq();
+    BOOST_TEST_MESSAGE("Initial template sequence: " << seq);
+
+    // Immediately trigger a fee increase. The timer hasn't fired yet (just reset),
+    // so this should be blocked (fee_delta = MAX_MONEY, threshold not met).
+    BOOST_TEST_MESSAGE("Triggering fee increase while timer is blocking...");
+    std::vector<CTransactionRef> blocked_fee_txs{MakeDummyTx()};
+    tester.m_mining_control->TriggerFeeIncrease(blocked_fee_txs);
+
+    // Wait for the mock's waitNext timeout (fee_check_interval = 2s) plus buffer.
+    // Should NOT get a new template because the timer blocked fee checks.
+    bool got_template = tester.m_mining_control->WaitForTemplateSeq(seq + 1, std::chrono::milliseconds{2500});
+    BOOST_REQUIRE_MESSAGE(!got_template, "Fee increase should be blocked when timer hasn't fired");
+
+    // Verify template count is still 1
+    BOOST_REQUIRE_EQUAL(tester.GetBlockTemplateCount(), 1);
+
+    // Now more than fee_check_interval (2s) has passed since the timer was reset.
+    // The timer should fire on the next iteration, allowing fee checks.
+    BOOST_TEST_MESSAGE("Triggering fee increase after timer should have fired...");
+    std::vector<CTransactionRef> allowed_fee_txs{MakeDummyTx()};
+    tester.m_mining_control->TriggerFeeIncrease(allowed_fee_txs);
+
+    // This time we should get a template. Allow up to 3s since the TP may be
+    // partway through a 2s waitNext cycle when we trigger the fee increase.
+    got_template = tester.m_mining_control->WaitForTemplateSeq(seq + 1, std::chrono::milliseconds{3000});
+    BOOST_REQUIRE_MESSAGE(got_template, "Fee increase should be allowed after timer fires");
+
+    // Receive the NewTemplate message
+    size_t bytes_nt = tester.PeerReceiveBytes();
+    BOOST_REQUIRE_EQUAL(bytes_nt, expected_new_template);
+
+    // Verify we now have 2 templates
+    BOOST_REQUIRE_EQUAL(tester.GetBlockTemplateCount(), 2);
+
     tester.m_mining_control->Shutdown();
 }
 

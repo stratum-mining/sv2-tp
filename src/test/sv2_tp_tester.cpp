@@ -211,3 +211,31 @@ size_t TPTester::GetBlockTemplateCount()
     LOCK(m_tp->m_tp_mutex);
     return m_tp->GetBlockTemplates().size();
 }
+
+void TPTester::SendSetupAndCoinbaseConstraints()
+{
+    node::Sv2NetMsg setup{SetupConnectionMsg()};
+    receiveMessage(setup);
+    PeerReceiveBytes(); // SetupConnection.Success
+
+    std::vector<uint8_t> coinbase_output_constraint_bytes{
+        0x01, 0x00, 0x00, 0x00, // coinbase_output_max_additional_size
+        0x00, 0x00              // coinbase_output_max_sigops
+    };
+    node::Sv2NetMsg coc_msg{node::Sv2MsgType::COINBASE_OUTPUT_CONSTRAINTS, std::move(coinbase_output_constraint_bytes)};
+    receiveMessage(coc_msg);
+}
+
+size_t TPTester::ReceiveTemplatePair()
+{
+    const size_t expected_set_new_prev_hash = SV2_HEADER_ENCRYPTED_SIZE + SV2_SET_NEW_PREV_HASH_MSG_SIZE + Poly1305::TAGLEN;
+    const size_t expected_new_template = SV2_HEADER_ENCRYPTED_SIZE + SV2_NEW_TEMPLATE_MSG_SIZE + Poly1305::TAGLEN;
+    const size_t expected_pair_bytes = expected_set_new_prev_hash + expected_new_template;
+
+    size_t accumulated = 0;
+    while (accumulated < expected_pair_bytes) {
+        accumulated += PeerReceiveBytes();
+    }
+    BOOST_REQUIRE_EQUAL(accumulated, expected_pair_bytes);
+    return accumulated;
+}

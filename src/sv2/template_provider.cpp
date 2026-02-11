@@ -131,16 +131,8 @@ void Sv2TemplateProvider::Interrupt()
     LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "Interrupt pending waitNext() calls...");
     {
         LOCK(m_tp_mutex);
-        try {
-            for (auto& t : GetBlockTemplates()) {
-                t.second.second->interruptWait();
-            }
-        } catch (const ipc::Exception& e) {
-            // Bitcoin Core v30 does not yet implement interruptWait(), fall back
-            // to just waiting until waitNext() returns.
-            LogPrintLevel(BCLog::SV2, BCLog::Level::Info,
-                          "Interrupt received, waiting up to %d seconds before shutting down (-sv2interval)",
-                          m_options.fee_check_interval.count());
+        for (auto& t : GetBlockTemplates()) {
+            t.second.second->interruptWait();
         }
     }
 

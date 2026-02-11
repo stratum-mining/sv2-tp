@@ -29,7 +29,7 @@ dependencies.
 
 Usage
 ------------------------
-Download or compile Bitcoin Core v30.0 or later. Start it with:
+Download or compile Bitcoin Core v30.2 or later. Start it with:
 
  ```sh
  bitcoin -m node -ipcbind=unix

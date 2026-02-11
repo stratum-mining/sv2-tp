@@ -1,5 +1,21 @@
 # Stratum v2
 
+## Requirements
+
+### Bitcoin Core Version
+
+sv2-tp requires **Bitcoin Core v30.2 or later** compiled with IPC support
+(`bitcoin-node` binary, not `bitcoind`).
+
+**Why v30.2?**
+- v30.2 implements `interruptWait()` for clean shutdown of template waiting
+- v30.2 properly enforces minimum block reserved weight
+
+To check your Bitcoin Core version:
+```sh
+bitcoin-node --version
+```
+
 ## Design
 
 The Stratum v2 protocol specification can be found here: https://stratumprotocol.org/specification

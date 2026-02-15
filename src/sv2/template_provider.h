@@ -82,6 +82,11 @@ private:
     std::thread m_thread_sv2_handler;
 
     /**
+     * Memory management thread
+     */
+    std::thread m_thread_memory_handler;
+
+    /**
      * Signal for handling interrupts and stopping the template provider event loop.
      */
     std::atomic<bool> m_flag_interrupt_sv2{false};
@@ -128,6 +133,11 @@ public:
      * all tasks for the template provider.
      */
     void ThreadSv2Handler() EXCLUSIVE_LOCKS_REQUIRED(!m_tp_mutex);
+
+    /**
+     * Template memory management thread.
+     */
+    void ThreadMemoryHandler() EXCLUSIVE_LOCKS_REQUIRED(!m_tp_mutex);
 
     /**
      * Give each client its own thread so they're treated equally

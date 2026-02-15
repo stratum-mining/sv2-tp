@@ -19,6 +19,7 @@ interface Mining $Proxy.wrap("interfaces::Mining") {
     waitTipChanged @3 (context :Proxy.Context, currentTip: Data, timeout: Float64) -> (result: Common.BlockRef);
     createNewBlock @4 (options: BlockCreateOptions) -> (result: BlockTemplate);
     checkBlock @5 (block: Data, options: BlockCheckOptions) -> (reason: Text, debug: Text, result: Bool);
+    getMemoryLoad @6 (context :Proxy.Context) -> (result: MemoryLoad);
 }
 
 interface BlockTemplate $Proxy.wrap("interfaces::BlockTemplate") {
@@ -34,6 +35,10 @@ interface BlockTemplate $Proxy.wrap("interfaces::BlockTemplate") {
     submitSolution @9 (context: Proxy.Context, version: UInt32, timestamp: UInt32, nonce: UInt32, coinbase :Data) -> (result: Bool);
     waitNext @10 (context: Proxy.Context, options: BlockWaitOptions) -> (result: BlockTemplate);
     interruptWait @11() -> ();
+}
+
+struct MemoryLoad $Proxy.wrap("interfaces::MemoryLoad") {
+    usage @0 :UInt64;
 }
 
 struct BlockCreateOptions $Proxy.wrap("node::BlockCreateOptions") {

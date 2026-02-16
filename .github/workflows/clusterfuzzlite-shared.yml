@@ -33,7 +33,11 @@ permissions: read-all
 jobs:
   fuzz:
     name: ${{ inputs.job_name }} (${{ matrix.sanitizer }})
-    runs-on: ubuntu-latest
+    # Temporary workaround for Docker client/daemon API mismatch in
+    # ClusterFuzzLite action images on ubuntu-latest.
+    # TODO: Revert to ubuntu-latest once
+    # https://github.com/google/clusterfuzzlite/pull/146 lands.
+    runs-on: ubuntu-22.04
     env:
       SV2_FUZZ_SABOTAGE: ${{ (vars.SV2_FUZZ_SABOTAGE != '' && vars.SV2_FUZZ_SABOTAGE != '0' && vars.SV2_FUZZ_SABOTAGE != 'false') && '1' || '0' }}
     concurrency:

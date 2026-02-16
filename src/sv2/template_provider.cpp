@@ -258,14 +258,13 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                 const size_t block_reserved_floor{1168};
                 // Reserve a little more so that if the above calculation is
                 // wrong or there's an implementation error, we don't produce
-                // an invalid bock when the template is completely full.
+                // an invalid block when the template is completely full.
                 const size_t block_reserved_padding{400};
 
-                // Bitcoin Core enforces a mimimum block reserved weight of 2000.
-                options.block_reserved_weight = std::min(size_t(2000),
-                                                         block_reserved_floor +
-                                                             block_reserved_padding +
-                                                             client->m_coinbase_tx_outputs_size * 4);
+                // Bitcoin Core enforces a minimum block reserved weight of 2000.
+                options.block_reserved_weight = std::max(
+                    node::MIN_BLOCK_RESERVED_WEIGHT,
+                    block_reserved_floor + block_reserved_padding + client->m_coinbase_tx_outputs_size * 4);
             }
             return true;
         };

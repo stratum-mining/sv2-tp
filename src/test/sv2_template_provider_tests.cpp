@@ -1,5 +1,6 @@
 #include <boost/test/unit_test.hpp>
 #include <interfaces/mining.h>
+#include <sv2/block_options.h>
 #include <interfaces/init.h>
 #include <sv2/messages.h>
 #include <test/sv2_test_setup.h>
@@ -16,6 +17,7 @@
 #include <test/sv2_mock_mining.h>
 
 #include <future>
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <thread>
@@ -26,6 +28,15 @@
 // build/src/test/test_sv2 --run_test=sv2_template_provider_tests --log_level=all -- -debug=sv2 -loglevel=sv2:trace | grep -v disabled
 
 BOOST_FIXTURE_TEST_SUITE(sv2_template_provider_tests, Sv2BasicTestingSetup)
+
+BOOST_AUTO_TEST_CASE(block_reserved_weight_floor)
+{
+    node::BlockCreateOptions options{};
+    // Guard against regressions where the reserved weight floor is treated as a cap.
+    options.block_reserved_weight = 1800;
+    options.block_reserved_weight = std::max(node::MIN_BLOCK_RESERVED_WEIGHT, options.block_reserved_weight);
+    BOOST_REQUIRE_EQUAL(options.block_reserved_weight, node::MIN_BLOCK_RESERVED_WEIGHT);
+}
 
 BOOST_AUTO_TEST_CASE(client_tests)
 {

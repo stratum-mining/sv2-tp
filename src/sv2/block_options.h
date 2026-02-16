@@ -14,6 +14,8 @@ namespace node {
 
 //! Default reserved weight for block assembly scaffolding (header, coinbase, etc).
 static constexpr unsigned int DEFAULT_BLOCK_RESERVED_WEIGHT{8000};
+//! Minimum reserved weight enforced by block assembly.
+static constexpr size_t MIN_BLOCK_RESERVED_WEIGHT{2000};
 
 struct BlockCreateOptions {
     /** Set false to omit mempool transactions from templates. */

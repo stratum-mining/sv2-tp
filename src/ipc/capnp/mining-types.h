@@ -10,6 +10,7 @@
 #include <ipc/capnp/common-types.h>
 #include <ipc/capnp/mining.capnp.proxy.h>
 #include <sv2/block_options.h>
+#include <sv2/coinbase_template.h>
 
 namespace mp {
 // Custom serializations

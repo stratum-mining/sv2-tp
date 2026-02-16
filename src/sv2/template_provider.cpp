@@ -578,11 +578,26 @@ bool Sv2TemplateProvider::SendWork(Sv2Client& client, uint64_t template_id, Bloc
         return false;
     }
 
-    node::Sv2NewTemplateMsg new_template{header,
-                                        block_template.getCoinbaseTx(),
-                                        block_template.getCoinbaseMerklePath(),
-                                        template_id,
-                                        future_template};
+    node::Sv2NewTemplateMsg new_template;
+    try {
+        node::CoinbaseTx coinbase{block_template.getCoinbaseTx()};
+
+        new_template = node::Sv2NewTemplateMsg{header,
+                                               coinbase,
+                                               block_template.getCoinbaseMerklePath(),
+                                               template_id,
+                                               future_template};
+    } catch (const std::exception&) {
+        // Fall back to getCoinbaseRawTx()
+        CTransactionRef coinbase_tx{block_template.getCoinbaseRawTx()};
+
+        new_template = node::Sv2NewTemplateMsg{header,
+                                               coinbase_tx,
+                                               block_template.getCoinbaseMerklePath(),
+                                               template_id,
+                                               future_template};
+
+    }
 
     LogPrintLevel(BCLog::SV2, BCLog::Level::Debug, "Send 0x71 NewTemplate id=%lu future=%d to client id=%zu\n", template_id, future_template, client.m_id);
     {

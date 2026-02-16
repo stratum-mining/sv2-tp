@@ -10,6 +10,7 @@ target_sources(fuzz
     fuzz.cpp
     check_globals.cpp
     sv2_noise.cpp
+    sv2_messages.cpp
     ../sv2_test_setup.cpp
 )
 

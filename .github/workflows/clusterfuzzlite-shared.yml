@@ -49,7 +49,7 @@ jobs:
           fetch-depth: 0
 
       - name: Build fuzzers (${{ matrix.sanitizer }})
-        uses: Sjors/clusterfuzzlite/actions/build_fuzzers@2025/10/clang-22
+        uses: Sjors/clusterfuzzlite/actions/build_fuzzers@2026/02/clang-22-v2
         with:
           language: c++
           sanitizer: ${{ matrix.sanitizer }}
@@ -83,7 +83,7 @@ jobs:
 
       - name: Run fuzzers (${{ matrix.sanitizer }})
         if: ${{ inputs.run_fuzzers }}
-        uses: Sjors/clusterfuzzlite/actions/run_fuzzers@2025/10/clang-22
+        uses: Sjors/clusterfuzzlite/actions/run_fuzzers@2026/02/clang-22-v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           sanitizer: ${{ matrix.sanitizer }}

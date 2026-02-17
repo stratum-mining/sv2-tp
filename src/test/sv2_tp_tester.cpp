@@ -36,8 +36,10 @@ struct MockInit : public interfaces::Init {
 };
 } // namespace
 
-TPTester::TPTester()
-    : m_state{std::make_shared<MockState>()}, m_mining_control{std::make_shared<MockMining>(m_state)}
+TPTester::TPTester() : TPTester(Sv2TemplateProviderOptions{.is_test = true}) {}
+
+TPTester::TPTester(Sv2TemplateProviderOptions opts)
+    : m_tp_options{opts}, m_state{std::make_shared<MockState>()}, m_mining_control{std::make_shared<MockMining>(m_state)}
 {
     // Start cap'n proto event loop on a background thread
     std::promise<mp::EventLoop*> loop_ready;
@@ -208,4 +210,36 @@ size_t TPTester::GetBlockTemplateCount()
 {
     LOCK(m_tp->m_tp_mutex);
     return m_tp->GetBlockTemplates().size();
+}
+
+void TPTester::SendSetupConnection()
+{
+    node::Sv2NetMsg setup{SetupConnectionMsg()};
+    receiveMessage(setup);
+    // SetupConnection.Success is 6 bytes
+    BOOST_REQUIRE_EQUAL(PeerReceiveBytes(), SV2_HEADER_ENCRYPTED_SIZE + 6 + Poly1305::TAGLEN);
+}
+
+void TPTester::SendCoinbaseOutputConstraints()
+{
+    std::vector<uint8_t> coinbase_output_constraint_bytes{
+        0x01, 0x00, 0x00, 0x00, // coinbase_output_max_additional_size
+        0x00, 0x00              // coinbase_output_max_sigops
+    };
+    node::Sv2NetMsg coc_msg{node::Sv2MsgType::COINBASE_OUTPUT_CONSTRAINTS, std::move(coinbase_output_constraint_bytes)};
+    receiveMessage(coc_msg);
+}
+
+size_t TPTester::ReceiveTemplatePair()
+{
+    const size_t expected_set_new_prev_hash = SV2_HEADER_ENCRYPTED_SIZE + SV2_SET_NEW_PREV_HASH_MSG_SIZE + Poly1305::TAGLEN;
+    const size_t expected_new_template = SV2_HEADER_ENCRYPTED_SIZE + SV2_NEW_TEMPLATE_MSG_SIZE + Poly1305::TAGLEN;
+    const size_t expected_pair_bytes = expected_set_new_prev_hash + expected_new_template;
+
+    size_t accumulated = 0;
+    while (accumulated < expected_pair_bytes) {
+        accumulated += PeerReceiveBytes();
+    }
+    BOOST_REQUIRE_EQUAL(accumulated, expected_pair_bytes);
+    return accumulated;
 }

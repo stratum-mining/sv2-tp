@@ -112,6 +112,7 @@ option(BUILD_TESTS "Build test_sv2 and other unit test executables." ON)
 option(ENABLE_IPC "Build IPC (libmultiprocess) components." ON)
 
 option(REDUCE_EXPORTS "Attempt to reduce exported symbols in the resulting executables." OFF)
+option(CMAKE_COMPILE_WARNING_AS_ERROR "Treat compiler warnings as errors." OFF)
 option(WITH_CCACHE "Attempt to use ccache for compiling." ON)
 
 option(WITH_EXTERNAL_LIBMULTIPROCESS "Build with external libmultiprocess library instead of with local git subtree. This is not normally recommended, but can be useful for developing libmultiprocess itself." OFF)

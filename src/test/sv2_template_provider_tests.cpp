@@ -206,4 +206,49 @@ BOOST_AUTO_TEST_CASE(client_tests)
     tester.m_mining_control->Shutdown();
 }
 
+// Test fee-based rate limiting timer (-sv2interval flag).
+// Uses is_test=false to exercise actual timer logic.
+BOOST_AUTO_TEST_CASE(fee_timer_blocking_test)
+{
+    // Use real wall-clock time instead of mock time
+    SetMockTime(std::chrono::seconds{0});
+
+    Sv2TemplateProviderOptions opts;
+    opts.is_test = false;
+    opts.fee_check_interval = std::chrono::seconds{2};
+    TPTester tester{opts};
+
+    tester.handshake();
+    tester.SendSetupConnection();
+    tester.SendCoinbaseOutputConstraints();
+    tester.ReceiveTemplatePair();
+
+    const size_t expected_new_template = SV2_HEADER_ENCRYPTED_SIZE + TPTester::SV2_NEW_TEMPLATE_MSG_SIZE + Poly1305::TAGLEN;
+
+    uint64_t seq = tester.m_mining_control->GetTemplateSeq();
+
+    // Trigger a fee increase immediately after template; timer should block it
+    BOOST_TEST_MESSAGE("Trigger fee increase while timer is blocking");
+    std::vector<CTransactionRef> blocked_fee_txs{MakeDummyTx()};
+    tester.m_mining_control->TriggerFeeIncrease(blocked_fee_txs);
+
+    bool got_template = tester.m_mining_control->WaitForTemplateSeq(seq + 1, std::chrono::milliseconds{2500});
+    BOOST_REQUIRE_MESSAGE(!got_template, "Fee increase should be blocked when timer hasn't fired");
+    BOOST_REQUIRE_EQUAL(tester.GetBlockTemplateCount(), 1);
+
+    // After fee_check_interval (2s), the timer should allow fee checks
+    BOOST_TEST_MESSAGE("Trigger fee increase after timer fires");
+    std::vector<CTransactionRef> allowed_fee_txs{MakeDummyTx()};
+    tester.m_mining_control->TriggerFeeIncrease(allowed_fee_txs);
+
+    got_template = tester.m_mining_control->WaitForTemplateSeq(seq + 1, std::chrono::milliseconds{3000});
+    BOOST_REQUIRE_MESSAGE(got_template, "Fee increase should be allowed after timer fires");
+
+    size_t bytes_nt = tester.PeerReceiveBytes();
+    BOOST_REQUIRE_EQUAL(bytes_nt, expected_new_template);
+    BOOST_REQUIRE_EQUAL(tester.GetBlockTemplateCount(), 2);
+
+    tester.m_mining_control->Shutdown();
+}
+
 BOOST_AUTO_TEST_SUITE_END()

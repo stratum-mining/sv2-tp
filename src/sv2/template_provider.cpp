@@ -332,7 +332,6 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
             // -sv2interval=N requires that we don't send fee updates until at least
             // N seconds have gone by. So we first call waitNext() without a fee
             // threshold, and then on the next while iteration we set it.
-            // TODO: add test coverage
             const bool check_fees{m_options.is_test || timer.trigger()};
 
             CAmount fee_delta{check_fees ? m_options.fee_delta : MAX_MONEY};

@@ -42,6 +42,7 @@ public:
     std::unique_ptr<interfaces::Mining> m_mining_proxy; // IPC mining proxy
 
     TPTester();
+    explicit TPTester(Sv2TemplateProviderOptions opts);
     ~TPTester();
 
     void SendPeerBytes();
@@ -50,6 +51,18 @@ public:
     void receiveMessage(Sv2NetMsg& msg);
     Sv2NetMsg SetupConnectionMsg();
     size_t GetBlockTemplateCount();
+
+    /** Send SetupConnection and verify Success reply. */
+    void SendSetupConnection();
+    /** Send CoinbaseOutputConstraints message. */
+    void SendCoinbaseOutputConstraints();
+    /** Receive a NewTemplate + SetNewPrevHash pair and verify sizes. Returns total bytes. */
+    size_t ReceiveTemplatePair();
+
+    // SV2 message payload sizes used for test verification
+    static constexpr size_t SV2_SET_NEW_PREV_HASH_MSG_SIZE = 8 + 32 + 4 + 4 + 32;
+    static constexpr size_t SV2_NEW_TEMPLATE_MSG_SIZE =
+        8 + 1 + 4 + 4 + 2 + 4 + 8 + 4 + 2 + 56 + 4 + 1;
 };
 
 #endif // BITCOIN_TEST_SV2_TP_TESTER_H

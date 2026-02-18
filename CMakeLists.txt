@@ -80,6 +80,10 @@ if(CMAKE_VERSION VERSION_LESS 4.2 AND CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND NO
   set(CMAKE_INSTALL_NAME_TOOL "${CMAKE_COMMAND} -E true")
 endif()
 enable_language(CXX)
+set(MIN_CLANG_DOCS "doc/dependencies.md#compiler")
+set(MIN_GCC_DOCS "doc/dependencies.md#compiler")
+set(MIN_MSVC_DOCS "doc/build-windows-msvc.md")
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)

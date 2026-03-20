@@ -4,12 +4,12 @@
 
 ### Bitcoin Core Version
 
-sv2-tp requires **Bitcoin Core v30.2 or later** compiled with IPC support
+sv2-tp requires **Bitcoin Core v31.0 or later** compiled with IPC support
 (`bitcoin-node` binary, not `bitcoind`).
 
-**Why v30.2?**
-- v30.2 implements `interruptWait()` for clean shutdown of template waiting
-- v30.2 properly enforces minimum block reserved weight
+**Compatibility note**
+- `sv2-tp` v1.0.6 is the last release that works with Bitcoin Core v30.2
+- Current `sv2-tp` depends on the Bitcoin Core v31.0 IPC mining interface
 
 To check your Bitcoin Core version:
 ```sh

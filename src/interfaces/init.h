@@ -7,6 +7,7 @@
 
 #include <interfaces/echo.h>
 #include <interfaces/mining.h>
+#include <util/check.h>
 
 #include <memory>
 
@@ -23,6 +24,7 @@ public:
     virtual ~Init() = default;
     virtual std::unique_ptr<Echo> makeEcho() { return nullptr; }
     virtual std::unique_ptr<Mining> makeMining() { return nullptr; }
+    virtual void makeMiningOld2() { Assert(false); }
     virtual Ipc* ipc() { return nullptr; }
     virtual bool canListenIpc() { return false; }
 };

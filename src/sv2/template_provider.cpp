@@ -568,35 +568,13 @@ void Sv2TemplateProvider::PruneBlockTemplateCache()
 bool Sv2TemplateProvider::SendWork(Sv2Client& client, uint64_t template_id, BlockTemplate& block_template, bool future_template)
 {
     CBlockHeader header{block_template.getBlockHeader()};
+    node::CoinbaseTx coinbase{block_template.getCoinbaseTx()};
 
-    // On signet, ensure the segwit commitment is present; otherwise, submitting a solution will fail.
-    if (gArgs.GetBoolArg("-signet", false) && block_template.getWitnessCommitmentIndex() == NO_WITNESS_COMMITMENT) {
-        LogPrintLevel(BCLog::SV2, BCLog::Level::Error,
-                      "Refusing to send NewTemplate on signet without segwit commitment (id=%lu)\n",
-                      template_id);
-        return false;
-    }
-
-    node::Sv2NewTemplateMsg new_template;
-    try {
-        node::CoinbaseTx coinbase{block_template.getCoinbaseTx()};
-
-        new_template = node::Sv2NewTemplateMsg{header,
-                                               coinbase,
-                                               block_template.getCoinbaseMerklePath(),
-                                               template_id,
-                                               future_template};
-    } catch (const std::exception&) {
-        // Fall back to getCoinbaseRawTx()
-        CTransactionRef coinbase_tx{block_template.getCoinbaseRawTx()};
-
-        new_template = node::Sv2NewTemplateMsg{header,
-                                               coinbase_tx,
-                                               block_template.getCoinbaseMerklePath(),
-                                               template_id,
-                                               future_template};
-
-    }
+    node::Sv2NewTemplateMsg new_template{header,
+                                         coinbase,
+                                         block_template.getCoinbaseMerklePath(),
+                                         template_id,
+                                         future_template};
 
     LogPrintLevel(BCLog::SV2, BCLog::Level::Debug, "Send 0x71 NewTemplate id=%lu future=%d to client id=%zu\n", template_id, future_template, client.m_id);
     {

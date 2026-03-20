@@ -59,13 +59,10 @@ public:
     std::vector<CAmount> getTxFees() override;
     std::vector<int64_t> getTxSigops() override;
     node::CoinbaseTx getCoinbaseTx() override;
-    CTransactionRef getCoinbaseRawTx() override;
-    std::vector<unsigned char> getCoinbaseCommitment() override;
-    int getWitnessCommitmentIndex() override;
     std::vector<uint256> getCoinbaseMerklePath() override;
     bool submitSolution(uint32_t, uint32_t, uint32_t, CTransactionRef) override;
 
-    std::unique_ptr<interfaces::BlockTemplate> waitNext(const node::BlockWaitOptions options = {}) override;
+    std::unique_ptr<interfaces::BlockTemplate> waitNext(node::BlockWaitOptions options = {}) override;
     void interruptWait() override;
 
 private:
@@ -81,7 +78,8 @@ public:
     bool isInitialBlockDownload() override;
     std::optional<interfaces::BlockRef> getTip() override;
     std::optional<interfaces::BlockRef> waitTipChanged(uint256, MillisecondsDouble) override;
-    std::unique_ptr<interfaces::BlockTemplate> createNewBlock(const node::BlockCreateOptions&) override;
+    std::unique_ptr<interfaces::BlockTemplate> createNewBlock(const node::BlockCreateOptions&, bool cooldown) override;
+    void interrupt() override;
     bool checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) override;
 
     // Accessors for tests (thread-safe)

@@ -58,13 +58,10 @@ CBlock MockBlockTemplate::getBlock() { return block; }
 std::vector<CAmount> MockBlockTemplate::getTxFees() { return {}; }
 std::vector<int64_t> MockBlockTemplate::getTxSigops() { return {}; }
 node::CoinbaseTx MockBlockTemplate::getCoinbaseTx() { return ExtractCoinbaseTx(block.vtx[0]); }
-CTransactionRef MockBlockTemplate::getCoinbaseRawTx() { return block.vtx[0]; }
-std::vector<unsigned char> MockBlockTemplate::getCoinbaseCommitment() { return {}; }
-int MockBlockTemplate::getWitnessCommitmentIndex() { return -1; }
 std::vector<uint256> MockBlockTemplate::getCoinbaseMerklePath() { return {}; }
 bool MockBlockTemplate::submitSolution(uint32_t, uint32_t, uint32_t, CTransactionRef) { return true; }
 
-std::unique_ptr<interfaces::BlockTemplate> MockBlockTemplate::waitNext(const node::BlockWaitOptions options)
+std::unique_ptr<interfaces::BlockTemplate> MockBlockTemplate::waitNext(node::BlockWaitOptions options)
 {
     auto deadline = std::chrono::steady_clock::now() +
                     std::chrono::milliseconds{static_cast<int64_t>(options.timeout.count())};
@@ -117,12 +114,13 @@ bool MockMining::isTestChain() { return true; }
 bool MockMining::isInitialBlockDownload() { return false; }
 std::optional<interfaces::BlockRef> MockMining::getTip() { return std::nullopt; }
 std::optional<interfaces::BlockRef> MockMining::waitTipChanged(uint256, MillisecondsDouble) { return std::nullopt; }
-std::unique_ptr<interfaces::BlockTemplate> MockMining::createNewBlock(const node::BlockCreateOptions&)
+std::unique_ptr<interfaces::BlockTemplate> MockMining::createNewBlock(const node::BlockCreateOptions&, bool)
 {
     LOCK(state->m);
     uint64_t seq = ++state->chain.template_seq;
     return std::make_unique<MockBlockTemplate>(state, state->chain.prev_hash, state->txs, seq);
 }
+void MockMining::interrupt() { LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "mock interrupt()"); }
 bool MockMining::checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) { return true; }
 
 uint64_t MockMining::GetTemplateSeq()

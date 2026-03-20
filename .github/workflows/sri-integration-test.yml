@@ -1,0 +1,89 @@
+# Copyright (c) 2026-present The Bitcoin Core developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or https://opensource.org/license/mit.
+
+name: SRI integration test
+
+on:
+  workflow_call:
+
+jobs:
+  sri-integration-test:
+    name: 'SRI integration test'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      BITCOIN_CORE_VERSION: 31.0rc1
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: 'true'
+      SCENARIO_ROOT: ${{ github.workspace }}/sri-integration-test
+      SV2_APPS_REF: main
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.ref || '' }}
+
+      - name: Install apt packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install clang mold ccache build-essential cmake ninja-build pkgconf libboost-dev systemtap-sdt-dev capnproto libcapnp-dev -y
+
+      - name: ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+          toolchain: 1.85
+
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Prepare Bitcoin Core
+        run: ./ci/test/04_run_stratum_v2_scenario.sh build-bitcoin-core
+
+      - name: Build sv2-tp
+        run: ./ci/test/04_run_stratum_v2_scenario.sh build-sv2-tp
+
+      - name: Build sv2-apps
+        run: ./ci/test/04_run_stratum_v2_scenario.sh build-sv2-apps
+
+      - name: Run SRI integration test
+        run: ./ci/test/04_run_stratum_v2_scenario.sh run
+
+      - name: 'Result: Bitcoin Core'
+        if: always()
+        run: |
+          echo '::group::bitcoin debug.log'
+          cat "${SCENARIO_ROOT}/datadir/regtest/debug.log" || true
+          echo '::endgroup::'
+
+      - name: 'Result: sv2-tp'
+        if: always()
+        run: |
+          echo '::group::sv2-tp stdout/stderr'
+          cat "${SCENARIO_ROOT}/logs/sv2-tp.log" || true
+          echo '::endgroup::'
+          echo '::group::sv2-tp debug log'
+          cat "${SCENARIO_ROOT}/datadir/regtest/sv2-debug.log" || true
+          echo '::endgroup::'
+
+      - name: 'Result: pool_sv2'
+        if: always()
+        run: |
+          echo '::group::pool_sv2 log'
+          cat "${SCENARIO_ROOT}/logs/pool.log" || true
+          echo '::endgroup::'
+
+      - name: 'Result: mining_device'
+        if: always()
+        run: |
+          echo '::group::mining_device log'
+          cat "${SCENARIO_ROOT}/logs/mining-device.log" || true
+          echo '::endgroup::'

@@ -125,9 +125,8 @@ bool MockMining::checkBlock(const CBlock&, const node::BlockCheckOptions&, std::
 
 MemoryLoad MockMining::getMemoryLoad()
 {
-    return {
-        .usage = 0
-    };
+    LOCK(state->m);
+    return state->memory_load;
 }
 
 uint64_t MockMining::GetTemplateSeq()
@@ -160,6 +159,11 @@ void MockMining::TriggerNewTip()
     LOCK(state->m);
     state->events.push(MockEvent{MockEvent::Type::NewTip, {}});
     state->cv.notify_all();
+}
+void MockMining::SetMemoryLoad(uint64_t usage)
+{
+    LOCK(state->m);
+    state->memory_load = {.usage = usage};
 }
 void MockMining::Shutdown()
 {

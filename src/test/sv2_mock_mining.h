@@ -46,6 +46,7 @@ struct MockState {
     std::vector<CTransactionRef> txs; // non-coinbase transactions included in templates
     std::queue<MockEvent> events;    // queued events driving waitNext()
     std::condition_variable_any cv;
+    MemoryLoad memory_load;
     bool shutdown{false};
 };
 
@@ -92,6 +93,7 @@ public:
     // Test control helpers
     void TriggerFeeIncrease(std::vector<CTransactionRef> txs);
     void TriggerNewTip();
+    void SetMemoryLoad(uint64_t usage);
     void Shutdown();
 
     // Wait until internal template sequence reaches at least target (returns false on timeout/shutdown)

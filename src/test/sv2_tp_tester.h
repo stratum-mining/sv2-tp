@@ -42,6 +42,7 @@ public:
     std::unique_ptr<interfaces::Mining> m_mining_proxy; // IPC mining proxy
 
     TPTester();
+    explicit TPTester(Sv2TemplateProviderOptions opts);
     ~TPTester();
 
     void SendPeerBytes();

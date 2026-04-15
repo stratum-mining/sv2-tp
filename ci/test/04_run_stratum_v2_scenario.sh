@@ -10,26 +10,39 @@ set -eEuo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly REPO_ROOT
-readonly BITCOIN_CORE_VERSION="${BITCOIN_CORE_VERSION:-31.0rc1}"
-readonly BITCOIN_CORE_PLATFORM="${BITCOIN_CORE_PLATFORM:-x86_64-linux-gnu}"
+readonly BITCOIN_CORE_REPO="${BITCOIN_CORE_REPO:-https://github.com/bitcoin/bitcoin.git}"
+readonly BITCOIN_CORE_REF="${BITCOIN_CORE_REF:-}"
 readonly SV2_APPS_REPO="${SV2_APPS_REPO:-https://github.com/stratum-mining/sv2-apps.git}"
 readonly SV2_APPS_REF="${SV2_APPS_REF:-main}"
 readonly SCENARIO_ROOT="${SCENARIO_ROOT:-${REPO_ROOT}/sri-integration-test}"
 readonly MODE="${1:-all}"
 
-if [[ "${BITCOIN_CORE_VERSION}" == *rc* ]]; then
-    bitcoin_core_series="${BITCOIN_CORE_VERSION%%rc*}"
-    bitcoin_core_rc="${BITCOIN_CORE_VERSION##*rc}"
-    bitcoin_core_url_default="https://bitcoincore.org/bin/bitcoin-core-${bitcoin_core_series}/test.rc${bitcoin_core_rc}"
+if [[ -z "${BITCOIN_CORE_REF}" ]]; then
+    : "${BITCOIN_CORE_VERSION:?BITCOIN_CORE_VERSION must be set when BITCOIN_CORE_REF is empty}"
+    : "${BITCOIN_CORE_PLATFORM:?BITCOIN_CORE_PLATFORM must be set when BITCOIN_CORE_REF is empty}"
+    readonly BITCOIN_CORE_VERSION
+    readonly BITCOIN_CORE_PLATFORM
+
+    if [[ "${BITCOIN_CORE_VERSION}" == *rc* ]]; then
+        bitcoin_core_series="${BITCOIN_CORE_VERSION%%rc*}"
+        bitcoin_core_rc="${BITCOIN_CORE_VERSION##*rc}"
+        bitcoin_core_url_default="https://bitcoincore.org/bin/bitcoin-core-${bitcoin_core_series}/test.rc${bitcoin_core_rc}"
+    else
+        bitcoin_core_url_default="https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_CORE_VERSION}"
+    fi
+
+    readonly BITCOIN_CORE_URL="${BITCOIN_CORE_URL:-${bitcoin_core_url_default}}"
+    readonly BITCOIN_CORE_TARBALL="${BITCOIN_CORE_TARBALL:-bitcoin-${BITCOIN_CORE_VERSION}-${BITCOIN_CORE_PLATFORM}.tar.gz}"
+    readonly BITCOIN_CORE_DIR="${BITCOIN_CORE_DIR:-bitcoin-${BITCOIN_CORE_VERSION}}"
 else
-    bitcoin_core_url_default="https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_CORE_VERSION}"
+    readonly BITCOIN_CORE_URL="${BITCOIN_CORE_URL:-}"
+    readonly BITCOIN_CORE_TARBALL="${BITCOIN_CORE_TARBALL:-}"
+    readonly BITCOIN_CORE_DIR="${BITCOIN_CORE_DIR:-}"
 fi
 
-readonly BITCOIN_CORE_URL="${BITCOIN_CORE_URL:-${bitcoin_core_url_default}}"
-readonly BITCOIN_CORE_TARBALL="${BITCOIN_CORE_TARBALL:-bitcoin-${BITCOIN_CORE_VERSION}-${BITCOIN_CORE_PLATFORM}.tar.gz}"
-readonly BITCOIN_CORE_DIR="${BITCOIN_CORE_DIR:-bitcoin-${BITCOIN_CORE_VERSION}}"
-
 readonly DOWNLOADS_DIR="${SCENARIO_ROOT}/downloads"
+readonly BITCOIN_CORE_SOURCE_DIR="${SCENARIO_ROOT}/bitcoin-core-source"
+readonly BITCOIN_CORE_BUILD_DIR="${SCENARIO_ROOT}/bitcoin-core-build"
 readonly SV2_APPS_DIR="${SCENARIO_ROOT}/sv2-apps"
 readonly DATADIR="${SCENARIO_ROOT}/datadir"
 readonly LOG_DIR="${SCENARIO_ROOT}/logs"
@@ -38,7 +51,11 @@ readonly BITCOIN_CONFIG_SOURCE="${REPO_ROOT}/ci/test/stratum_v2_bitcoin.conf"
 readonly SV2_TP_CONFIG_SOURCE="${REPO_ROOT}/ci/test/stratum_v2_sv2-tp.conf"
 readonly POOL_CONFIG_TEMPLATE="${REPO_ROOT}/ci/test/stratum_v2_pool-regtest.toml.in"
 
-readonly BITCOIN_BINDIR="${DOWNLOADS_DIR}/${BITCOIN_CORE_DIR}/bin"
+if [[ -n "${BITCOIN_CORE_REF}" ]]; then
+    readonly BITCOIN_BINDIR="${BITCOIN_CORE_BUILD_DIR}/bin"
+else
+    readonly BITCOIN_BINDIR="${DOWNLOADS_DIR}/${BITCOIN_CORE_DIR}/bin"
+fi
 readonly BITCOIN="${BITCOIN_BINDIR}/bitcoin"
 readonly BITCOIN_CLI="${BITCOIN_BINDIR}/bitcoin-cli"
 readonly SV2_TP="${REPO_ROOT}/build/bin/sv2-tp"
@@ -117,6 +134,42 @@ download_bitcoin_core()
     fi
 }
 
+update_bitcoin_core_source()
+{
+    if [[ ! -d "${BITCOIN_CORE_SOURCE_DIR}/.git" ]]; then
+        rm -rf "${BITCOIN_CORE_SOURCE_DIR}"
+        echo "Cloning Bitcoin Core (${BITCOIN_CORE_REPO})"
+        git init "${BITCOIN_CORE_SOURCE_DIR}"
+        git -C "${BITCOIN_CORE_SOURCE_DIR}" remote add origin "${BITCOIN_CORE_REPO}"
+    fi
+
+    echo "Updating Bitcoin Core to ${BITCOIN_CORE_REF}"
+    git -C "${BITCOIN_CORE_SOURCE_DIR}" fetch --depth=1 --filter=blob:none origin "${BITCOIN_CORE_REF}"
+    git -C "${BITCOIN_CORE_SOURCE_DIR}" checkout --force FETCH_HEAD
+}
+
+build_bitcoin_core_from_source()
+{
+    echo "Building Bitcoin Core from ${BITCOIN_CORE_REF}"
+    update_bitcoin_core_source
+    cmake -B "${BITCOIN_CORE_BUILD_DIR}" -G Ninja \
+        -DBUILD_BENCH=OFF \
+        -DBUILD_FUZZ_BINARY=OFF \
+        -DBUILD_GUI=OFF \
+        -DBUILD_TESTS=OFF \
+        "${BITCOIN_CORE_SOURCE_DIR}"
+    cmake --build "${BITCOIN_CORE_BUILD_DIR}" --target bitcoin bitcoin-node bitcoin-cli -j"$(nproc)"
+}
+
+prepare_bitcoin_core()
+{
+    if [[ -n "${BITCOIN_CORE_REF}" ]]; then
+        build_bitcoin_core_from_source
+    else
+        download_bitcoin_core
+    fi
+}
+
 update_sv2_apps()
 {
     if [[ ! -d "${SV2_APPS_DIR}/.git" ]]; then
@@ -139,7 +192,7 @@ build_mining_device()
 build_phase()
 {
     echo "Preparing SRI integration test build artifacts"
-    download_bitcoin_core
+    prepare_bitcoin_core
     update_sv2_apps
 
     echo "Building sv2-tp"
@@ -154,8 +207,8 @@ build_phase()
 
 build_bitcoin_core_phase()
 {
-    echo "Preparing Bitcoin Core binary artifacts"
-    download_bitcoin_core
+    echo "Preparing Bitcoin Core artifacts"
+    prepare_bitcoin_core
 }
 
 build_sv2_tp_phase()

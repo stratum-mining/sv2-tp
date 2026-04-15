@@ -14,6 +14,7 @@ jobs:
     timeout-minutes: 90
     env:
       BITCOIN_CORE_VERSION: 31.0rc4
+      BITCOIN_CORE_PLATFORM: x86_64-linux-gnu
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: 'true'
       SCENARIO_ROOT: ${{ github.workspace }}/sri-integration-test
@@ -27,7 +28,7 @@ jobs:
       - name: Install apt packages
         run: |
           sudo apt-get update
-          sudo apt-get install clang mold ccache build-essential cmake ninja-build pkgconf libboost-dev systemtap-sdt-dev capnproto libcapnp-dev -y
+          sudo apt-get install clang mold ccache build-essential cmake ninja-build pkgconf libboost-dev libevent-dev libsqlite3-dev systemtap-sdt-dev capnproto libcapnp-dev -y
 
       - name: ccache
         uses: actions/cache@v4

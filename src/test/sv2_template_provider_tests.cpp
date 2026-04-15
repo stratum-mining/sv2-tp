@@ -135,7 +135,7 @@ BOOST_AUTO_TEST_CASE(client_tests)
     tester.m_mining_control->TriggerFeeIncrease(high_fee_txs);
 
     // Move mock time
-    SetMockTime(GetMockTime() + std::chrono::seconds{tester.m_tp_options.fee_check_interval});
+    SetMockTime(GetMockTime() + std::chrono::seconds{tester.m_tp_options.template_interval});
 
     // Wait for a new template sequence instead of sleeping
     BOOST_REQUIRE(tester.m_mining_control->WaitForTemplateSeq(seq_after_first + 1));
@@ -195,7 +195,7 @@ BOOST_AUTO_TEST_CASE(client_tests)
     tester.m_mining_control->TriggerFeeIncrease(higher_fee_txs);
 
     // Move mock time
-    SetMockTime(GetMockTime() + std::chrono::seconds{tester.m_tp_options.fee_check_interval});
+    SetMockTime(GetMockTime() + std::chrono::seconds{tester.m_tp_options.template_interval});
 
     // Briefly wait for the timer in ThreadSv2Handler and block creation
     // Wait for sequence to advance again (second fee increase)

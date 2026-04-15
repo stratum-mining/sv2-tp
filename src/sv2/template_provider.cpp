@@ -245,7 +245,7 @@ void Sv2TemplateProvider::ThreadSv2Handler()
 void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
 {
     try {
-        Timer timer(m_options.fee_check_interval);
+        Timer timer(m_options.template_interval);
 
         const auto prepare_block_create_options = [this, client_id](node::BlockCreateOptions& options) -> bool {
             {
@@ -330,26 +330,25 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
             // not when there's only a fee increase.
             bool future_template{false};
 
-            // -sv2interval=N requires that we don't send fee updates until at least
-            // N seconds have gone by. So we first call waitNext() without a fee
-            // threshold, and then on the next while iteration we set it.
-            // TODO: add test coverage
+            // -templateinterval=N suppresses fee-based template updates
+            // for N seconds after each template. waitNext() is called with
+            // fee_threshold=MAX_MONEY (ignoring fee changes) until the timer
+            // fires, then with the real fee_delta on the next iteration.
             const bool check_fees{m_options.is_test || timer.trigger()};
 
             CAmount fee_delta{check_fees ? m_options.fee_delta : MAX_MONEY};
 
             node::BlockWaitOptions options;
             options.fee_threshold = fee_delta;
-            // Always set a timeout so Ctrl+C interrupts within a bounded time.
-            options.timeout = m_options.is_test ? MillisecondsDouble(1000) : m_options.fee_check_interval;
+            options.timeout = m_options.is_test ? MillisecondsDouble(1000) : m_options.template_interval;
             if (!check_fees) {
                 LogPrintLevel(BCLog::SV2, BCLog::Level::Trace,
-                              "Ignore fee changes for %d seconds (-sv2interval), wait for a new tip, client id=%zu\n",
-                              m_options.fee_check_interval.count(), client_id);
+                              "Ignore fee changes for %d seconds (-templateinterval), wait for a new tip, client id=%zu\n",
+                              m_options.template_interval.count(), client_id);
             } else {
                 LogPrintLevel(BCLog::SV2, BCLog::Level::Trace,
                               "Wait up to %d seconds for fees to rise by %lld sat or a new tip, client id=%zu\n",
-                              m_options.fee_check_interval.count(),
+                              m_options.template_interval.count(),
                               static_cast<long long>(fee_delta),
                               client_id);
             }

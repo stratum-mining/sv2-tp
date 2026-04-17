@@ -6,7 +6,9 @@
 #define BITCOIN_TEST_FUZZ_SV2_FUZZ_UTIL_H
 
 #include <logging.h>
+#include <test/fuzz/FuzzedDataProvider.h>
 #include <test/sv2_test_setup.h>
+#include <uint256.h>
 
 #include <cstdlib>
 #include <functional>
@@ -51,6 +53,21 @@ inline void Sv2FuzzInitialize()
         }
         LogInstance().StartLogging();
     }
+}
+
+/**
+ * Consume 32 bytes from the fuzzer to produce a uint256.
+ *
+ * Ideally this would live in FuzzedDataProvider, but that header is
+ * imported from upstream LLVM and should not be modified locally.
+ */
+[[nodiscard]] inline uint256 ConsumeUint256(FuzzedDataProvider& provider) noexcept
+{
+    const std::vector<uint8_t> v256 = provider.ConsumeBytes<uint8_t>(32);
+    if (v256.size() != 32) {
+        return {};
+    }
+    return uint256{std::span<const unsigned char>(v256)};
 }
 
 #endif // BITCOIN_TEST_FUZZ_SV2_FUZZ_UTIL_H

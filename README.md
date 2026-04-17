@@ -70,7 +70,7 @@ Here is an example configuration:
 chain=signet
 
 ipcconnect=unix
-sv2interval=30
+templateinterval=5
 sv2feedelta=1000
 
 # Logging

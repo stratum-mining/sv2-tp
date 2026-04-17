@@ -119,7 +119,7 @@ static void AddArgs(ArgsManager& args)
     args.AddArg("-ipcconnect=<address>", "Connect to bitcoin-node process in the background to perform online operations. Valid <address> values are 'unix' to connect to the default socket, 'unix:<socket path>' to connect to a socket at a nonstandard path. Default value: unix", ArgsManager::ALLOW_ANY, OptionsCategory::IPC);
     args.AddArg("-sv2bind=<addr>[:<port>]", strprintf("Bind to given address and always listen on it (default: 127.0.0.1). Use [host]:port notation for IPv6."), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::CONNECTION);
     args.AddArg("-sv2port=<port>", strprintf("Listen for Stratum v2 connections on <port> (default: %u, testnet3: %u, testnet4: %u, signet: %u, regtest: %u).", defaultBaseParams->Sv2Port(), testnetBaseParams->Sv2Port(), testnet4BaseParams->Sv2Port(), signetBaseParams->Sv2Port(), regtestBaseParams->Sv2Port()), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::CONNECTION);
-    args.AddArg("-sv2interval", strprintf("Template Provider block template update interval (default: %d seconds)", Sv2TemplateProviderOptions().fee_check_interval.count()), ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
+    args.AddArg("-templateinterval", strprintf("Minimum seconds between fee-based template updates. New blocks always propagate immediately. (default: %d)", Sv2TemplateProviderOptions().template_interval.count()), ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
     args.AddArg("-sv2feedelta", strprintf("Minimum fee delta for Template Provider to send update upstream (default: %d sat)", uint64_t(Sv2TemplateProviderOptions().fee_delta)), ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
     init::AddLoggingArgs(args);
 }
@@ -223,12 +223,12 @@ MAIN_FUNCTION
 
     options.fee_delta = args.GetIntArg("-sv2feedelta", Sv2TemplateProviderOptions().fee_delta);
 
-    if (args.IsArgSet("-sv2interval")) {
-        if (args.GetIntArg("-sv2interval", 0) < 1) {
-            tfm::format(std::cerr, "-sv2interval must be at least one second\n");
+    if (args.IsArgSet("-templateinterval")) {
+        if (args.GetIntArg("-templateinterval", 0) < 1) {
+            tfm::format(std::cerr, "-templateinterval must be at least one second\n");
             return EXIT_FAILURE;
         }
-        options.fee_check_interval = std::chrono::seconds(args.GetIntArg("-sv2interval", 0));
+        options.template_interval = std::chrono::seconds(args.GetIntArg("-templateinterval", 0));
     }
 
     // Connect to bitcoin-node via IPC

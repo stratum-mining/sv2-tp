@@ -39,9 +39,10 @@ struct Sv2TemplateProviderOptions
     CAmount fee_delta{1000};
 
     /**
-     * Block template update interval (to check for increased fees)
+     * Minimum seconds between fee-based template updates.
+     * New blocks always propagate immediately.
      */
-    std::chrono::seconds fee_check_interval{30};
+    std::chrono::seconds template_interval{5};
 };
 
 /**

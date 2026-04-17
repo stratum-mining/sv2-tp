@@ -457,3 +457,83 @@ FUZZ_TARGET(sv2_new_template, .init = Sv2FuzzInitialize)
     assert(rt_version == msg.m_version);
     assert(rt_coinbase_tx_version == msg.m_coinbase_tx_version);
 }
+
+// -- Raw-bytes deserialization targets ----------------------------------------
+//
+// These feed arbitrary fuzzer bytes directly into the deserializer, testing the
+// full deserialization attack surface. The try/catch is essential: most random
+// inputs will fail parsing, but sanitizers (ASan/UBSan/MSan) catch any memory
+// errors or undefined behavior triggered along the way.
+
+FUZZ_TARGET(sv2_setup_connection_raw, .init = Sv2FuzzInitialize)
+{
+    const CheckGlobals check_globals{};
+    SeedRandomStateForTest(SeedRand::ZEROS);
+
+    DataStream ds{buffer};
+    try {
+        Sv2SetupConnectionMsg msg;
+        ds >> msg;
+    } catch (const std::ios_base::failure&) {
+    }
+}
+
+FUZZ_TARGET(sv2_coinbase_output_constraints_raw, .init = Sv2FuzzInitialize)
+{
+    const CheckGlobals check_globals{};
+    SeedRandomStateForTest(SeedRand::ZEROS);
+
+    DataStream ds{buffer};
+    try {
+        Sv2CoinbaseOutputConstraintsMsg msg;
+        ds >> msg;
+
+        // If deserialization succeeded, verify roundtrip invariant
+        DataStream ss_rt{};
+        ss_rt << msg;
+        Sv2CoinbaseOutputConstraintsMsg msg_rt;
+        ss_rt >> msg_rt;
+        assert(msg.m_coinbase_output_max_additional_size == msg_rt.m_coinbase_output_max_additional_size);
+        assert(msg.m_coinbase_output_max_additional_sigops == msg_rt.m_coinbase_output_max_additional_sigops);
+    } catch (const std::ios_base::failure&) {
+    }
+}
+
+FUZZ_TARGET(sv2_request_transaction_data_raw, .init = Sv2FuzzInitialize)
+{
+    const CheckGlobals check_globals{};
+    SeedRandomStateForTest(SeedRand::ZEROS);
+
+    DataStream ds{buffer};
+    try {
+        Sv2RequestTransactionDataMsg msg;
+        ds >> msg;
+    } catch (const std::ios_base::failure&) {
+    }
+}
+
+FUZZ_TARGET(sv2_submit_solution_raw, .init = Sv2FuzzInitialize)
+{
+    const CheckGlobals check_globals{};
+    SeedRandomStateForTest(SeedRand::ZEROS);
+
+    DataStream ds{buffer};
+    try {
+        Sv2SubmitSolutionMsg msg;
+        ds >> msg;
+    } catch (const std::ios_base::failure&) {
+    }
+}
+
+FUZZ_TARGET(sv2_net_msg_raw, .init = Sv2FuzzInitialize)
+{
+    const CheckGlobals check_globals{};
+    SeedRandomStateForTest(SeedRand::ZEROS);
+
+    DataStream ds{buffer};
+    try {
+        Sv2NetMsg msg(Sv2MsgType::SETUP_CONNECTION, {});
+        ds >> msg;
+    } catch (const std::ios_base::failure&) {
+    }
+}

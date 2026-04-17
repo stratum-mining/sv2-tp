@@ -120,6 +120,7 @@ static void AddArgs(ArgsManager& args)
     args.AddArg("-sv2bind=<addr>[:<port>]", strprintf("Bind to given address and always listen on it (default: 127.0.0.1). Use [host]:port notation for IPv6."), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::CONNECTION);
     args.AddArg("-sv2port=<port>", strprintf("Listen for Stratum v2 connections on <port> (default: %u, testnet3: %u, testnet4: %u, signet: %u, regtest: %u).", defaultBaseParams->Sv2Port(), testnetBaseParams->Sv2Port(), testnet4BaseParams->Sv2Port(), signetBaseParams->Sv2Port(), regtestBaseParams->Sv2Port()), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::CONNECTION);
     args.AddArg("-templateinterval", strprintf("Minimum seconds between fee-based template updates. New blocks always propagate immediately. (default: %d)", Sv2TemplateProviderOptions().template_interval.count()), ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
+    args.AddArg("-memoryinterval", strprintf("Template Provider memory usage reporting interval (default: %d seconds)", Sv2TemplateProviderOptions().memory_check_interval.count()), ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
     args.AddArg("-sv2feedelta", strprintf("Minimum fee delta for Template Provider to send update upstream (default: %d sat)", uint64_t(Sv2TemplateProviderOptions().fee_delta)), ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
     init::AddLoggingArgs(args);
 }
@@ -229,6 +230,14 @@ MAIN_FUNCTION
             return EXIT_FAILURE;
         }
         options.template_interval = std::chrono::seconds(args.GetIntArg("-templateinterval", 0));
+    }
+
+    if (args.IsArgSet("-memoryinterval")) {
+        if (args.GetIntArg("-memoryinterval", 0) < 1) {
+            tfm::format(std::cerr, "-memoryinterval must be at least one second\n");
+            return EXIT_FAILURE;
+        }
+        options.memory_check_interval = std::chrono::seconds(args.GetIntArg("-memoryinterval", 0));
     }
 
     // Connect to bitcoin-node via IPC

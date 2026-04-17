@@ -123,6 +123,12 @@ std::unique_ptr<interfaces::BlockTemplate> MockMining::createNewBlock(const node
 void MockMining::interrupt() { LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "mock interrupt()"); }
 bool MockMining::checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) { return true; }
 
+MemoryLoad MockMining::getMemoryLoad()
+{
+    LOCK(state->m);
+    return state->memory_load;
+}
+
 uint64_t MockMining::GetTemplateSeq()
 {
     LOCK(state->m);
@@ -153,6 +159,11 @@ void MockMining::TriggerNewTip()
     LOCK(state->m);
     state->events.push(MockEvent{MockEvent::Type::NewTip, {}});
     state->cv.notify_all();
+}
+void MockMining::SetMemoryLoad(uint64_t usage)
+{
+    LOCK(state->m);
+    state->memory_load = {.usage = usage};
 }
 void MockMining::Shutdown()
 {

@@ -28,10 +28,10 @@ get_directory_property(precious_variables CACHE_VARIABLES)
 #=============================
 set(CLIENT_NAME "Sv2 Template Provider")
 set(CLIENT_VERSION_MAJOR 1)
-set(CLIENT_VERSION_MINOR 0)
-set(CLIENT_VERSION_BUILD 7)
+set(CLIENT_VERSION_MINOR 1)
+set(CLIENT_VERSION_BUILD 0)
 set(CLIENT_VERSION_RC 0)
-set(CLIENT_VERSION_IS_RELEASE "false")
+set(CLIENT_VERSION_IS_RELEASE "true")
 set(COPYRIGHT_YEAR "2026")
 
 # During the enabling of the CXX and CXXOBJ languages, we modify

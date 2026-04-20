@@ -123,7 +123,7 @@ git commit -m "Add attestations by ${SIGNER} for ${VERSION} non-codesigned"
 popd
 ```
 
-Then open a Pull Request to the [guix.sigs repository](https://github.com/bitcoin-core/guix.sigs).
+Then open a Pull Request to the [guix.sigs repository](https://github.com/stratum-mining/sv2-tp-guix.sigs).
 
 ## Codesigning
 
@@ -171,7 +171,7 @@ popd
 ### Non-codesigners: wait for Windows and macOS detached signatures
 
 - Once the Windows and macOS builds each have 3 matching signatures, they will be signed with their respective release keys.
-- Detached signatures will then be committed to the [bitcoin-detached-sigs](https://github.com/bitcoin-core/bitcoin-detached-sigs) repository, which can be combined with the unsigned apps to create signed binaries.
+- Detached signatures will then be committed to the [sv2-tp-detached-sigs](https://github.com/stratum-mining/sv2-tp-detached-sigs) repository, which can be combined with the unsigned apps to create signed binaries.
 
 ### Create the codesigned build outputs
 
@@ -190,9 +190,9 @@ git commit -m "Add attestations by ${SIGNER} for ${VERSION} codesigned"
 popd
 ```
 
-Then open a Pull Request to the [guix.sigs repository](https://github.com/bitcoin-core/guix.sigs).
+Then open a Pull Request to the [guix.sigs repository](https://github.com/stratum-mining/sv2-tp-guix.sigs).
 
-## After 6 or more people have guix-built and their results match
+## After 1 or more people have guix-built and their results match
 
 After verifying signatures, combine the `all.SHA256SUMS.asc` file from all signers into `SHA256SUMS.asc`:
 
@@ -202,7 +202,7 @@ cat "$VERSION"/*/all.SHA256SUMS.asc > SHA256SUMS.asc
 
 
 - Upload to Github release:
-    1. The contents of each `./bitcoin/guix-build-${VERSION}/output/${HOST}/` directory.
+    1. The contents of each `./sv2-tp/guix-build-${VERSION}/output/${HOST}/` directory.
 
        Guix will output all of the results into host subdirectories, but the SHA256SUMS
        file does not include these subdirectories. In order for downloads via torrent

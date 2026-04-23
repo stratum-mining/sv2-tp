@@ -85,4 +85,21 @@ public:
         1;                  // merkle_path count (CompactSize(0))
 };
 
+/**
+ * RAII handle around a TPTester. Owns the tester by value and tears it down
+ * at scope exit.
+ */
+class TPTesterHandle {
+public:
+    TPTesterHandle() : TPTesterHandle(Sv2TemplateProviderOptions{.is_test = true}) {}
+    explicit TPTesterHandle(Sv2TemplateProviderOptions opts) : m_owned(opts), m_tester(m_owned) {}
+
+    TPTester* operator->() noexcept { return &m_tester; }
+    TPTester& operator*() noexcept { return m_tester; }
+
+private:
+    TPTester m_owned;
+    TPTester& m_tester;
+};
+
 #endif // BITCOIN_TEST_SV2_TP_TESTER_H

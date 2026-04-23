@@ -158,6 +158,13 @@ public:
      */
     void ProcessSv2Message(const node::Sv2NetMsg& sv2_header, Sv2Client& client) EXCLUSIVE_LOCKS_REQUIRED(!m_tp_mutex);
 
+    /**
+     * Set the interrupt flag without performing any IPC. Useful for tests that
+     * need to wind the handler thread down before the IPC event loop is free to
+     * service further calls (see TPTester teardown).
+     */
+    void RequestInterrupt() noexcept { m_flag_interrupt_sv2 = true; }
+
     // Only used for tests
     XOnlyPubKey m_authority_pubkey;
 

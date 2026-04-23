@@ -2,6 +2,7 @@
 #include <interfaces/mining.h>
 #include <sv2/block_options.h>
 #include <interfaces/init.h>
+#include <logging.h>
 #include <sv2/messages.h>
 #include <test/sv2_test_setup.h>
 #include <test/util/net.h>
@@ -16,9 +17,11 @@
 #include <test/sv2_tp_tester.h>
 #include <test/sv2_mock_mining.h>
 
-#include <future>
 #include <algorithm>
+#include <condition_variable>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -36,6 +39,57 @@ BOOST_AUTO_TEST_CASE(block_reserved_weight_floor)
     options.block_reserved_weight = 1800;
     options.block_reserved_weight = std::max(node::MIN_BLOCK_RESERVED_WEIGHT, options.block_reserved_weight);
     BOOST_REQUIRE_EQUAL(options.block_reserved_weight, node::MIN_BLOCK_RESERVED_WEIGHT);
+}
+
+BOOST_AUTO_TEST_CASE(memory_load_log)
+{
+    auto& logger{LogInstance()};
+    logger.DisconnectTestLogger();
+    logger.m_print_to_console = false;
+    logger.m_print_to_file = false;
+    logger.m_log_timestamps = false;
+    logger.EnableCategory(BCLog::SV2);
+    logger.SetCategoryLogLevel({{BCLog::SV2, BCLog::Level::Trace}});
+
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool found{false};
+    auto callback{logger.PushBackCallback([&](const std::string& line) {
+        if (line.find("Template memory footprint 2.000 MiB") == std::string::npos) return;
+        {
+            std::lock_guard<std::mutex> lock{mutex};
+            found = true;
+        }
+        cv.notify_one();
+    })};
+    struct LoggerCleanup {
+        BCLog::Logger& logger;
+        decltype(callback) callback_it;
+        ~LoggerCleanup()
+        {
+            logger.DeleteCallback(callback_it);
+            logger.DisableCategory(BCLog::SV2);
+            logger.SetCategoryLogLevel({});
+        }
+    } logger_cleanup{logger, callback};
+    BOOST_REQUIRE(logger.StartLogging());
+
+    bool saw_log{false};
+    {
+        TPTester tester{};
+        tester.m_mining_control->SetMemoryLoad(2 * 1024 * 1024);
+
+        // Jump to the next 60 second reporting interval. Retry a few times to
+        // avoid depending on exactly when the memory thread started.
+        for (int attempt{0}; attempt < 3 && !saw_log; ++attempt) {
+            SetMockTime(GetMockTime() + std::chrono::seconds{60});
+            std::unique_lock<std::mutex> lock{mutex};
+            saw_log = cv.wait_for(lock, std::chrono::milliseconds{1500}, [&] { return found; });
+        }
+        tester.m_mining_control->Shutdown();
+    }
+
+    BOOST_REQUIRE(saw_log);
 }
 
 BOOST_AUTO_TEST_CASE(client_tests)

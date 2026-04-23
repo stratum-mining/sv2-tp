@@ -17,6 +17,8 @@
 #include <sync.h>
 #include <uint256.h>
 
+using interfaces::MemoryLoad;
+
 // Minimal mocks for the Mining IPC interface used by sv2 tests.
 
 struct MockEvent {
@@ -44,6 +46,7 @@ struct MockState {
     std::vector<CTransactionRef> txs; // non-coinbase transactions included in templates
     std::queue<MockEvent> events;    // queued events driving waitNext()
     std::condition_variable_any cv;
+    MemoryLoad memory_load;
     bool shutdown{false};
 };
 
@@ -81,6 +84,7 @@ public:
     std::unique_ptr<interfaces::BlockTemplate> createNewBlock(const node::BlockCreateOptions&, bool cooldown) override;
     void interrupt() override;
     bool checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) override;
+    MemoryLoad getMemoryLoad() override;
 
     // Accessors for tests (thread-safe)
     uint64_t GetTemplateSeq();
@@ -89,6 +93,7 @@ public:
     // Test control helpers
     void TriggerFeeIncrease(std::vector<CTransactionRef> txs);
     void TriggerNewTip();
+    void SetMemoryLoad(uint64_t usage);
     void Shutdown();
 
     // Wait until internal template sequence reaches at least target (returns false on timeout/shutdown)

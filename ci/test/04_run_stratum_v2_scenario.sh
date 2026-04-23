@@ -95,6 +95,17 @@ show_logs()
     )
 }
 
+has_memory_load_log()
+{
+    local log_file
+    for log_file in "${LOG_DIR}/sv2-tp.log" "${DATADIR}/regtest/sv2-debug.log"; do
+        if [[ -f "${log_file}" ]] && grep -Eq "Template memory footprint [0-9.]+ MiB" "${log_file}"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 cleanup()
 {
     set +e
@@ -305,6 +316,11 @@ run_phase()
     fi
 
     grep -q "Connected to bitcoin-node via IPC" "${LOG_DIR}/sv2-tp.log"
+
+    if ! has_memory_load_log; then
+        echo "SRI integration test did not observe a getMemoryLoad() memory footprint log entry" >&2
+        exit 1
+    fi
 
     echo "SRI integration test completed successfully at regtest height ${count}"
 }

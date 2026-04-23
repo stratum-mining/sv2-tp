@@ -86,19 +86,32 @@ public:
 };
 
 /**
- * RAII handle around a TPTester. Owns the tester by value and tears it down
- * at scope exit.
+ * RAII handle around a TPTester. On non-Windows platforms it owns the tester
+ * by value and tears it down at scope exit. On Windows it heap-allocates and
+ * intentionally leaks the tester: tearing down the IPC EventLoop / per-thread
+ * state at process exit deadlocks std::thread::join during libmultiprocess
+ * thread-local cleanup. See https://github.com/bitcoin-core/libmultiprocess/pull/231
+ * and https://github.com/bitcoin/bitcoin/pull/32387. The OS reclaims the
+ * remaining loop thread and IPC state at process exit. This only disables
+ * test cleanup, not the tests themselves.
  */
 class TPTesterHandle {
 public:
     TPTesterHandle() : TPTesterHandle(Sv2TemplateProviderOptions{.is_test = true}) {}
-    explicit TPTesterHandle(Sv2TemplateProviderOptions opts) : m_owned(opts), m_tester(m_owned) {}
+    explicit TPTesterHandle(Sv2TemplateProviderOptions opts)
+#ifdef WIN32
+        : m_tester(*new TPTester(opts)) {}
+#else
+        : m_owned(opts), m_tester(m_owned) {}
+#endif
 
     TPTester* operator->() noexcept { return &m_tester; }
     TPTester& operator*() noexcept { return m_tester; }
 
 private:
+#ifndef WIN32
     TPTester m_owned;
+#endif
     TPTester& m_tester;
 };
 

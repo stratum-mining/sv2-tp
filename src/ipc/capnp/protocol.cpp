@@ -25,6 +25,9 @@
 #include <string>
 #include <system_error>
 #include <thread>
+#ifndef WIN32
+#include <sys/socket.h>
+#endif
 
 namespace ipc {
 namespace capnp {

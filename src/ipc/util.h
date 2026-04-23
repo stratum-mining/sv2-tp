@@ -14,7 +14,9 @@
 #include <kj/debug.h>
 #include <mp/util.h>
 #include <mp/version.h>
+#if MP_MAJOR_VERSION < 12 && !defined(WIN32)
 #include <sys/socket.h>
+#endif
 
 namespace mp {
 // Definitions that can be deleted when libmultiprocess subtree is updated to

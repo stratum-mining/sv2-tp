@@ -18,10 +18,12 @@
 // Forward declarations
 class Sv2Transport;
 namespace mp { class EventLoop; }
+namespace mp { class Connection; }
 namespace interfaces { class Init; class Mining; }
 
 struct MockState;
 class MockMining;
+struct MockInit;
 
 class TPTester {
 private:
@@ -32,7 +34,8 @@ private:
     // IPC loopback components
     std::thread m_loop_thread;
     mp::EventLoop* m_loop{nullptr};
-    std::unique_ptr<interfaces::Init> m_server_init;
+    std::unique_ptr<mp::Connection> m_server_connection;
+    std::unique_ptr<MockInit> m_server_init;
     std::unique_ptr<interfaces::Init> m_client_init;
     std::array<mp::SocketId, 2> m_ipc_fds{mp::SocketError, mp::SocketError};
 

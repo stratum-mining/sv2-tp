@@ -24,7 +24,6 @@ extern std::function<void(const std::string&)> G_TEST_LOG_FUN;
 
 #include <future>
 
-namespace {
 struct MockInit : public interfaces::Init {
     std::shared_ptr<MockState> state;
     explicit MockInit(std::shared_ptr<MockState> s) : state(std::move(s)) {}
@@ -33,7 +32,6 @@ struct MockInit : public interfaces::Init {
         return std::make_unique<MockMining>(state);
     }
 };
-} // namespace
 
 TPTester::TPTester() : TPTester(Sv2TemplateProviderOptions{.is_test = true}) {}
 
@@ -58,10 +56,19 @@ TPTester::TPTester(Sv2TemplateProviderOptions opts)
 
     // Create server Init exposing MockMining via shared state
     m_server_init = std::make_unique<MockInit>(m_state);
+    MockInit& server_init = *m_server_init;
     // Register server side on the event loop thread
     m_loop->sync([&] {
         mp::Stream server_stream{m_loop->m_io_context.lowLevelProvider->wrapSocketFd(m_ipc_fds[0], kj::LowLevelAsyncIoProvider::TAKE_OWNERSHIP)};
-        mp::ServeStream<ipc::capnp::messages::Init>(*m_loop, std::move(server_stream), *static_cast<MockInit*>(m_server_init.get()));
+        m_server_connection = std::make_unique<mp::Connection>(
+            *m_loop,
+            std::move(server_stream),
+            [&server_init](mp::Connection& connection) {
+                auto server_proxy = kj::heap<mp::ProxyServer<ipc::capnp::messages::Init>>(
+                    std::shared_ptr<MockInit>(&server_init, [](MockInit*) {}), connection);
+                return capnp::Capability::Client(kj::mv(server_proxy));
+            });
+        m_server_connection->onDisconnect([this] { m_server_connection.reset(); });
     });
 
     // Connect client side and fetch Mining proxy
@@ -85,22 +92,52 @@ TPTester::TPTester(Sv2TemplateProviderOptions opts)
 
 TPTester::~TPTester()
 {
+    // Set the interrupt flag directly (atomic, no IPC needed) so the
+    // client thread exits its main loop after the current waitNext()
+    // returns. This MUST happen before Shutdown() below, otherwise
+    // the client thread spins in a tight IPC waitNext() loop that
+    // starves the destructor's own IPC calls on Windows.
+    if (m_tp) {
+        m_tp->RequestInterrupt();
+    }
+
+    // Signal the mock state directly (bypasses IPC) so that any
+    // MockBlockTemplate::waitNext() blocked on the event-loop thread
+    // returns immediately.
+    m_mining_control->Shutdown();
+
+    // Now that the flag is set and waitNext() will return, the client
+    // thread will see m_flag_interrupt_sv2 and exit. Connman interrupt
+    // + stop ensures the socket handler thread also winds down.
+    if (m_tp) {
+        m_tp->Interrupt();
+        m_tp->StopThreads();
+    }
+
     // Hold a loop ref while tearing down dependent objects to keep loop alive.
     if (m_loop) {
         mp::EventLoopRef loop_ref{*m_loop};
-        // Destroy objects that may post work to the loop while the loop is guaranteed alive.
         m_tp.reset();
         m_mining_proxy.reset();
         m_client_init.reset();
-        // Server init can go after clients; it only owns exported capabilities.
+
+        // Pump the loop once so pending release/disconnect messages are
+        // processed, then explicitly tear down the server-side Connection.
+        // This avoids depending on Windows socketpair disconnect behavior to
+        // release the final EventLoopRef and let the loop thread exit.
+        m_loop->sync([] {});
+        if (m_server_connection) {
+            m_loop->sync([this] { m_server_connection.reset(); });
+        }
+
         m_server_init.reset();
     } else {
+        m_server_connection.reset();
         m_tp.reset();
         m_mining_proxy.reset();
         m_client_init.reset();
         m_server_init.reset();
     }
-    // Join loop thread (loop exits automatically when refs & connections reach zero).
     if (m_loop_thread.joinable()) m_loop_thread.join();
 }
 

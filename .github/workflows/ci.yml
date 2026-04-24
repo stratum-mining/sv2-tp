@@ -185,6 +185,100 @@ jobs:
           # https://github.com/actions/cache/blob/main/tips-and-workarounds.md#update-a-cache
           key: ${{ github.job }}-${{ matrix.job-type }}-ccache-${{ github.run_id }}
 
+  windows-cross:
+    name: 'Linux->Windows cross, no tests'
+    runs-on: ubuntu-24.04
+    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
+
+    env:
+      FILE_ENV: './ci/test/00_setup_env_win64.sh'
+      DANGER_CI_ON_HOST_FOLDERS: 1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.ref || '' }}
+
+      - name: Set CI directories
+        run: |
+          echo "CCACHE_DIR=${{ runner.temp }}/ccache_dir" >> "$GITHUB_ENV"
+          echo "BASE_ROOT_DIR=${{ runner.temp }}" >> "$GITHUB_ENV"
+          echo "DEPENDS_DIR=${{ runner.temp }}/depends" >> "$GITHUB_ENV"
+          echo "BASE_BUILD_DIR=${{ runner.temp }}/build" >> "$GITHUB_ENV"
+
+      - name: Depends cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DEPENDS_DIR }}/built
+          key: ${{ github.job }}-depends-${{ hashFiles('depends/**', 'ci/test/00_setup_env_win64.sh') }}
+
+      - name: Restore Ccache cache
+        id: ccache-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ github.job }}-ccache-${{ github.run_id }}
+          restore-keys: ${{ github.job }}-ccache-
+
+      - name: CI script
+        run: ./ci/test_run_all.sh
+
+      - name: Save Ccache cache
+        uses: actions/cache/save@v4
+        if: github.event_name != 'pull_request' && steps.ccache-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ github.job }}-ccache-${{ github.run_id }}
+
+      - name: Upload built executables
+        uses: actions/upload-artifact@v4
+        with:
+          name: x86_64-w64-mingw32-executables-${{ github.run_id }}
+          path: |
+            ${{ env.BASE_BUILD_DIR }}/bin/*.exe
+            ${{ env.BASE_BUILD_DIR }}/test/config.ini
+
+  windows-native-test:
+    name: 'Windows, test cross-built'
+    runs-on: windows-2022
+    needs: windows-cross
+
+    env:
+      PYTHONUTF8: 1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.ref || '' }}
+
+      - name: Download built executables
+        uses: actions/download-artifact@v4
+        with:
+          name: x86_64-w64-mingw32-executables-${{ github.run_id }}
+
+      - name: Run sv2-tp.exe
+        run: ./bin/sv2-tp.exe -version
+
+      - name: Find mt.exe tool
+        shell: pwsh
+        run: |
+          $sdk_dir = (Get-ItemProperty 'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows Kits\Installed Roots' -Name KitsRoot10).KitsRoot10
+          $sdk_latest = (Get-ChildItem "$sdk_dir\bin" -Directory | Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } | Sort-Object Name -Descending | Select-Object -First 1).Name
+          "MT_EXE=${sdk_dir}bin\${sdk_latest}\x64\mt.exe" >> $env:GITHUB_ENV
+
+      - name: Validate sv2-tp manifest
+        shell: pwsh
+        run: |
+          & $env:MT_EXE -nologo -inputresource:bin\sv2-tp.exe -out:sv2-tp.manifest
+          Get-Content sv2-tp.manifest
+          & $env:MT_EXE -nologo -inputresource:bin\sv2-tp.exe -validate_manifest
+
+      - name: Run unit tests
+        run: |
+          ./bin/test_sv2.exe -l test_suite
+
   ci-matrix:
     name: ${{ matrix.name }}
     needs: runners

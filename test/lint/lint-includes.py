@@ -22,6 +22,7 @@ EXCLUDED_DIRS = ["contrib/devtools/bitcoin-tidy/",
 
 EXPECTED_BOOST_INCLUDES = [
                            "boost/test/included/unit_test.hpp",
+                           "boost/test/results_collector.hpp",
                            "boost/test/unit_test.hpp",
                           ]
 

@@ -17,6 +17,29 @@ const TranslateFn G_TRANSLATION_FUN{nullptr};
 #include <functional>
 #include <iostream>
 
+#ifdef WIN32
+#include <boost/test/results_collector.hpp>
+#include <cstdio>
+#include <cstdlib>
+
+// Some tests intentionally leak a TPTester on Windows because libmultiprocess
+// teardown deadlocks during thread-local cleanup (libmultiprocess#231,
+// bitcoin#32387). Those leaked threads can also fault during static destruction
+// at process exit. Once Boost.Test has reported its results, bypass static
+// destructors entirely so the process exits cleanly with the right code.
+struct WinExitFixture {
+    ~WinExitFixture()
+    {
+        std::fflush(stdout);
+        std::fflush(stderr);
+        const auto& results = boost::unit_test::results_collector.results(
+            boost::unit_test::framework::master_test_suite().p_id);
+        _exit(results.passed() ? 0 : 1);
+    }
+};
+BOOST_GLOBAL_FIXTURE(WinExitFixture);
+#endif
+
 /** Redirect debug log to unit_test.log files */
 std::function<void(const std::string&)> G_TEST_LOG_FUN = [](const std::string& s) {
     static const bool should_log{std::any_of(

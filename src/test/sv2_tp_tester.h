@@ -10,16 +10,20 @@
 #include <test/util/net.h>
 #include <util/sock.h>
 
+#include <array>
 #include <memory>
+#include <mp/util.h>
 #include <thread>
 
 // Forward declarations
 class Sv2Transport;
 namespace mp { class EventLoop; }
+namespace mp { class Connection; }
 namespace interfaces { class Init; class Mining; }
 
 struct MockState;
 class MockMining;
+struct MockInit;
 
 class TPTester {
 private:
@@ -30,9 +34,10 @@ private:
     // IPC loopback components
     std::thread m_loop_thread;
     mp::EventLoop* m_loop{nullptr};
-    std::unique_ptr<interfaces::Init> m_server_init;
+    std::unique_ptr<mp::Connection> m_server_connection;
+    std::unique_ptr<MockInit> m_server_init;
     std::unique_ptr<interfaces::Init> m_client_init;
-    int m_ipc_fds[2]{-1, -1};
+    std::array<mp::SocketId, 2> m_ipc_fds{mp::SocketError, mp::SocketError};
 
 public:
     std::unique_ptr<Sv2TemplateProvider> m_tp; //!< Sv2TemplateProvider being tested
@@ -78,6 +83,36 @@ public:
         2 + 56 +            // B0_64K: length prefix (2 bytes) + 2 outputs (witness commitment 43 bytes + merge mining 13 bytes)
         4 +                 // coinbase_tx_locktime
         1;                  // merkle_path count (CompactSize(0))
+};
+
+/**
+ * RAII handle around a TPTester. On non-Windows platforms it owns the tester
+ * by value and tears it down at scope exit. On Windows it heap-allocates and
+ * intentionally leaks the tester: tearing down the IPC EventLoop / per-thread
+ * state at process exit deadlocks std::thread::join during libmultiprocess
+ * thread-local cleanup. See https://github.com/bitcoin-core/libmultiprocess/pull/231
+ * and https://github.com/bitcoin/bitcoin/pull/32387. The OS reclaims the
+ * remaining loop thread and IPC state at process exit. This only disables
+ * test cleanup, not the tests themselves.
+ */
+class TPTesterHandle {
+public:
+    TPTesterHandle() : TPTesterHandle(Sv2TemplateProviderOptions{.is_test = true}) {}
+    explicit TPTesterHandle(Sv2TemplateProviderOptions opts)
+#ifdef WIN32
+        : m_tester(*new TPTester(opts)) {}
+#else
+        : m_owned(opts), m_tester(m_owned) {}
+#endif
+
+    TPTester* operator->() noexcept { return &m_tester; }
+    TPTester& operator*() noexcept { return m_tester; }
+
+private:
+#ifndef WIN32
+    TPTester m_owned;
+#endif
+    TPTester& m_tester;
 };
 
 #endif // BITCOIN_TEST_SV2_TP_TESTER_H

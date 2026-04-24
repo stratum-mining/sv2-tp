@@ -15,6 +15,7 @@
  */
 BOOST_FIXTURE_TEST_SUITE(sv2_tester_lifecycle_tests, Sv2BasicTestingSetup)
 
+#ifndef WIN32
 BOOST_AUTO_TEST_CASE(tp_tester_repeated_construction)
 {
     // Run a few iterations; keep count modest to stay fast in CI while
@@ -49,5 +50,12 @@ BOOST_AUTO_TEST_CASE(tp_tester_repeated_construction)
         // test hangs or use-after-frees under sanitizers / valgrind.
     }
 }
+#else
+// TODO: Re-enable on Windows once the libmultiprocess shutdown hang is fixed
+// upstream. Tearing down the IPC EventLoop / per-thread state at process
+// exit deadlocks std::thread::join on mingw winpthreads. Tracked in
+// libmultiprocess#231 (rewrites the EventLoop wakeup primitive and adds
+// shutdownWrite() in ~Connection) and bitcoin#32387.
+#endif
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -20,6 +20,9 @@ readonly MODE="${1:-all}"
 if [[ -z "${BITCOIN_CORE_REF}" ]]; then
     : "${BITCOIN_CORE_VERSION:?BITCOIN_CORE_VERSION must be set when BITCOIN_CORE_REF is empty}"
     : "${BITCOIN_CORE_PLATFORM:?BITCOIN_CORE_PLATFORM must be set when BITCOIN_CORE_REF is empty}"
+    if [[ "${BITCOIN_CORE_VERSION}" != *.* ]] && [[ "${BITCOIN_CORE_VERSION}" != *rc* ]]; then
+        BITCOIN_CORE_VERSION+=".0"
+    fi
     readonly BITCOIN_CORE_VERSION
     readonly BITCOIN_CORE_PLATFORM
 

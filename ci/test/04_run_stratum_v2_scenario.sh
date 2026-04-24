@@ -111,6 +111,37 @@ cleanup()
     fi
 }
 
+# Verify a single block's coinbase satisfies BIP54 (Consensus Cleanup):
+# - nLockTime == height - 1
+# - vin[0].sequence != 0xffffffff
+check_bip54_coinbase()
+{
+    local height="$1"
+    local block_hash coinbase_txid tx_json locktime sequence expected_locktime
+
+    block_hash="$("${BITCOIN_CLI}" "${BITCOIN_ARGS[@]}" getblockhash "${height}")"
+    coinbase_txid="$("${BITCOIN_CLI}" "${BITCOIN_ARGS[@]}" getblock "${block_hash}" 1 \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin)["tx"][0])')"
+    tx_json="$("${BITCOIN_CLI}" "${BITCOIN_ARGS[@]}" getrawtransaction \
+        "${coinbase_txid}" true "${block_hash}")"
+    read -r locktime sequence < <(printf '%s' "${tx_json}" | python3 -c '
+import json, sys
+tx = json.load(sys.stdin)
+print(tx["locktime"], tx["vin"][0]["sequence"])
+')
+
+    expected_locktime=$((height - 1))
+    if (( locktime != expected_locktime )); then
+        echo "BIP54 violation: block ${height} coinbase nLockTime=${locktime}, expected ${expected_locktime}" >&2
+        return 1
+    fi
+    if (( sequence == 4294967295 )); then
+        echo "BIP54 violation: block ${height} coinbase nSequence=0xffffffff" >&2
+        return 1
+    fi
+    echo "Block ${height} coinbase passes BIP54: nLockTime=${locktime} nSequence=${sequence}"
+}
+
 prepare_runtime_state()
 {
     rm -rf "${DATADIR}" "${LOG_DIR}"
@@ -308,6 +339,18 @@ run_phase()
     fi
 
     grep -q "Connected to bitcoin-node via IPC" "${LOG_DIR}/sv2-tp.log"
+
+    echo "Verifying BIP54 compliance of SRI-mined blocks (heights 18..${count})"
+    bip54_passed=0
+    for ((h = 18; h <= count; ++h)); do
+        if check_bip54_coinbase "${h}"; then
+            bip54_passed=1
+        fi
+    done
+    if (( bip54_passed == 0 )); then
+        echo "SRI integration test: no SRI-mined block satisfied BIP54" >&2
+        exit 1
+    fi
 
     echo "SRI integration test completed successfully at regtest height ${count}"
 }

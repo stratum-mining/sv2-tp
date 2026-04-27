@@ -49,7 +49,9 @@ jobs:
           fetch-depth: 0
 
       - name: Build fuzzers (${{ matrix.sanitizer }})
-        uses: Sjors/clusterfuzzlite/actions/build_fuzzers@2026/02/clang-22-v2
+        # Pin to a SHA on google/clusterfuzzlite#146 so the branch can rebase
+        # without breaking us; revert to a tagged release once the PR lands.
+        uses: google/clusterfuzzlite/actions/build_fuzzers@d2c7d068aab9081cbbc57825ad0d5d6ca6674f95 # migrate-to-ubuntu-24-04
         with:
           language: c++
           sanitizer: ${{ matrix.sanitizer }}
@@ -83,7 +85,9 @@ jobs:
 
       - name: Run fuzzers (${{ matrix.sanitizer }})
         if: ${{ inputs.run_fuzzers }}
-        uses: Sjors/clusterfuzzlite/actions/run_fuzzers@2026/02/clang-22-v2
+        # Pin to a SHA on google/clusterfuzzlite#146 so the branch can rebase
+        # without breaking us; revert to a tagged release once the PR lands.
+        uses: google/clusterfuzzlite/actions/run_fuzzers@d2c7d068aab9081cbbc57825ad0d5d6ca6674f95 # migrate-to-ubuntu-24-04
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           sanitizer: ${{ matrix.sanitizer }}

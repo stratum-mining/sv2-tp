@@ -34,6 +34,10 @@ bool MaybeDamage(FuzzedDataProvider& provider, std::vector<std::byte>& transport
 
 FUZZ_TARGET(sv2_noise_cipher_roundtrip, .init = Sv2FuzzInitialize)
 {
+    // TEMP: deliberate uninit read to verify MSan source mapping. Remove.
+    volatile int msan_break;
+    if (msan_break == 0xdead1) std::abort();
+
     const CheckGlobals check_globals{};
     SeedRandomStateForTest(SeedRand::ZEROS);
     // Test that Sv2Noise's encryption and decryption agree.

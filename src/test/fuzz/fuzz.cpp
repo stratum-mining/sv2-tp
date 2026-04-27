@@ -36,6 +36,13 @@
 __AFL_FUZZ_INIT();
 #endif
 
+#if defined(__has_feature)
+#  if __has_feature(memory_sanitizer)
+#    include <sanitizer/msan_interface.h>
+#    define SV2_MSAN_ENABLED 1
+#  endif
+#endif
+
 extern const std::function<void(const std::string&)> G_TEST_LOG_FUN{};
 
 const TranslateFn G_TRANSLATION_FUN{nullptr};
@@ -234,6 +241,22 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 // This function is used by libFuzzer
 extern "C" int LLVMFuzzerInitialize(int* argc, char*** argv)
 {
+#ifdef SV2_MSAN_ENABLED
+    // libFuzzer forwards argc/argv from glibc's __libc_start_main. On
+    // glibc >= 2.39 MSan does not unpoison them, so SetArgs would trip
+    // use-of-uninitialized-value on the first deref. Unpoison the shadow
+    // at both addresses first, then dereference and unpoison the strings.
+    __msan_unpoison(argc, sizeof(*argc));
+    __msan_unpoison(argv, sizeof(*argv));
+    const int ac{*argc};
+    char** const av{*argv};
+    __msan_unpoison(av, sizeof(*av) * (ac + 1));
+    for (int i = 0; i < ac; ++i) {
+        if (av[i] != nullptr) {
+            __msan_unpoison(av[i], std::strlen(av[i]) + 1);
+        }
+    }
+#endif
     SetArgs(*argc, *argv);
     initialize();
     return 0;

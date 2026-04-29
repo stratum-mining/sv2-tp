@@ -48,7 +48,7 @@ ensure_image_cached() {
 
 case "${operation}" in
   detect-symbolizer)
-    image='ghcr.io/sjors/clusterfuzzlite-run-fuzzers:llvm-22-debug'
+    image='gcr.io/oss-fuzz-base/clusterfuzzlite-run-fuzzers:ubuntu-24-04-v1'
     ensure_image_cached "$image"
     docker run \
       "${docker_common[@]}" \

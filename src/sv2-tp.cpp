@@ -273,13 +273,13 @@ MAIN_FUNCTION
     registerSignalHandler(SIGINT, HandleSIGTERM);
 #endif
 
-    while(!g_interrupt) {
+    while (!g_interrupt && !tp->BackendDisconnected()) {
         UninterruptibleSleep(100ms);
     }
 
-    tp->Interrupt();
-    tp->StopThreads();
+    const bool backend_disconnected = tp->BackendDisconnected();
+
     tp.reset();
 
-    return EXIT_SUCCESS;
+    return backend_disconnected ? EXIT_FAILURE : EXIT_SUCCESS;
 }

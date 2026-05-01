@@ -11,6 +11,7 @@
 #include <util/time.h>
 #include <streams.h>
 #include <memory>
+#include <atomic>
 
 using interfaces::BlockTemplate;
 
@@ -111,6 +112,11 @@ private:
     using BlockTemplateCache = std::map<uint64_t, std::pair<uint256, std::shared_ptr<BlockTemplate>>>;
     BlockTemplateCache m_block_template_cache GUARDED_BY(m_tp_mutex);
 
+    /**
+     * flag to check if the backend has been disconnected or not
+     */
+    std::atomic<bool> m_backend_disconnected{false};
+
 public:
     explicit Sv2TemplateProvider(interfaces::Mining& mining);
 
@@ -168,6 +174,9 @@ public:
     /* Block templates that connected clients may be working on */
     BlockTemplateCache& GetBlockTemplates() EXCLUSIVE_LOCKS_REQUIRED(m_tp_mutex) { return m_block_template_cache; }
 
+    // Accessor to get the backend disconnected state
+    bool BackendDisconnected() const {return m_backend_disconnected.load();}
+
 private:
 
     /* Forget templates from before the last block, but with a few seconds margin. */
@@ -188,6 +197,8 @@ private:
      * account, we set future_template to false and don't send SetNewPrevHash.
      */
     [[nodiscard]] bool SendWork(Sv2Client& client, uint64_t template_id, BlockTemplate& block_template, bool future_template);
+
+    void HandleBackendDisconnect(const char* operation, const std::exception& e);
 
 };
 

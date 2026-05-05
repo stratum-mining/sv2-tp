@@ -1,0 +1,14 @@
+.git/
+build/
+ci/scratch/
+.guix-build-*
+.cache/
+releases/
+target/
+*.pyc
+*.patch
+.vscode/
+.claude/
+AGENTS.md
+Dockerfile
+.dockerignore

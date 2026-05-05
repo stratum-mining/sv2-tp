@@ -1,0 +1,34 @@
+services:
+  bitcoin-core:
+    image: bitcoin/bitcoin:31.0
+    stop_grace_period: 5m
+    volumes:
+      - bitcoin-data:/home/bitcoin/.bitcoin
+    entrypoint: bitcoin
+    command:
+      - -m node
+      - -printtoconsole
+      - -signet
+      - -ipcbind=unix
+
+  sv2-tp:
+    image: stratumv2/sv2-tp:latest
+    depends_on:
+      - bitcoin-core
+    ports:
+      - "38442:38442"
+    volumes:
+      - bitcoin-data:/home/bitcoin/.bitcoin
+    command:
+      - -datadir=/home/bitcoin/.bitcoin
+      - -ipcconnect=unix
+      - -chain=signet
+      - -sv2bind=0.0.0.0:38442
+      - -debug=sv2
+      - -loglevel=sv2:trace
+      - -printtoconsole
+      - -debuglogfile=0
+      - -pid=/tmp/sv2-tp.pid
+
+volumes:
+  bitcoin-data:

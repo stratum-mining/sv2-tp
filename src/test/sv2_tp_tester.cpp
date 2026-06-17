@@ -65,11 +65,16 @@ TPTester::TPTester(Sv2TemplateProviderOptions opts)
     m_server_init = std::make_unique<MockInit>(m_state);
     // Register server side on the event loop thread
     m_loop->sync([&] {
-        mp::ServeStream<ipc::capnp::messages::Init>(*m_loop, m_ipc_fds[0], *static_cast<MockInit*>(m_server_init.get()));
+        mp::ServeStream<ipc::capnp::messages::Init>(
+            *m_loop,
+            mp::MakeStream(m_loop->m_io_context, m_ipc_fds[0]),
+            *static_cast<MockInit*>(m_server_init.get()));
     });
 
     // Connect client side and fetch Mining proxy
-    m_client_init = mp::ConnectStream<ipc::capnp::messages::Init>(*m_loop, m_ipc_fds[1]);
+    m_client_init = mp::ConnectStream<ipc::capnp::messages::Init>(
+        *m_loop,
+        mp::MakeStream(m_loop->m_io_context, m_ipc_fds[1]));
     BOOST_REQUIRE(m_client_init != nullptr);
     m_mining_proxy = m_client_init->makeMining();
     BOOST_REQUIRE(m_mining_proxy != nullptr);

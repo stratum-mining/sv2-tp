@@ -9,6 +9,7 @@ permissions: read-all
 
 jobs:
   build:
+    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
     uses: ./.github/workflows/clusterfuzzlite-shared.yml
     secrets: inherit
     with:

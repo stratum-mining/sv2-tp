@@ -13,6 +13,9 @@ node::Sv2NewTemplateMsg::Sv2NewTemplateMsg(const CBlockHeader& header, const nod
 
     m_coinbase_tx_version = coinbase.version;
     m_coinbase_prefix = coinbase.script_sig_prefix;
+    if (coinbase.witness.has_value()) {
+        m_coinbase_witness.assign(coinbase.witness->begin(), coinbase.witness->end());
+    }
     m_coinbase_tx_input_sequence = coinbase.sequence;
 
     // The coinbase nValue already contains the nFee + the Block Subsidy when built using CreateBlock().

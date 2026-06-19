@@ -72,6 +72,7 @@ public:
         4 +                 // version
         4 +                 // coinbase_tx_version
         2 +                 // coinbase_prefix (CompactSize(1) + 1-byte OP_0)
+        1 + 32 +            // coinbase_witness (B0_32 length + 32-byte witness)
         4 +                 // coinbase_tx_input_sequence
         8 +                 // coinbase_tx_value_remaining
         4 +                 // coinbase_tx_outputs_count

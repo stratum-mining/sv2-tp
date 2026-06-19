@@ -284,6 +284,14 @@ struct Sv2NewTemplateMsg
     CScript m_coinbase_prefix;
 
     /**
+     * The first (and only) witness stack element of the coinbase.
+     *
+     * Empty when no witness commitment output is present in
+     * m_coinbase_tx_outputs. Otherwise, this must contain exactly 32 bytes.
+     */
+    std::vector<uint8_t> m_coinbase_witness;
+
+    /**
      * The coinbase transaction input’s nSequence field.
      */
     uint32_t m_coinbase_tx_input_sequence;
@@ -321,11 +329,14 @@ struct Sv2NewTemplateMsg
     template <typename Stream>
     void Serialize(Stream& s) const
     {
+        Assert(m_coinbase_witness.empty() || m_coinbase_witness.size() == 32);
+
         s << m_template_id
           << m_future_template
           << m_version
           << m_coinbase_tx_version
           << m_coinbase_prefix
+          << m_coinbase_witness
           << m_coinbase_tx_input_sequence
           << m_coinbase_tx_value_remaining
           << m_coinbase_tx_outputs_count;

@@ -6,6 +6,7 @@
 
 #include <boost/test/unit_test.hpp>
 #include <interfaces/init.h>
+#include <ipc/exception.h>
 #include <mp/proxy-io.h>
 #include <src/ipc/capnp/init.capnp.h>
 #include <src/ipc/capnp/init.capnp.proxy.h>
@@ -44,8 +45,9 @@ TPTester::TPTester(Sv2TemplateProviderOptions opts)
     // Start cap'n proto event loop on a background thread
     std::promise<mp::EventLoop*> loop_ready;
     m_loop_thread = std::thread([&] {
-        auto log_fn = [](bool /*raise*/, std::string message) {
+        auto log_fn = [](bool raise, std::string message) {
             if (G_TEST_LOG_FUN) G_TEST_LOG_FUN(message);
+            if (raise) throw ipc::Exception(message);
         };
         mp::EventLoop loop("sv2-tp-test", log_fn);
         m_loop = &loop;
@@ -75,7 +77,8 @@ TPTester::TPTester(Sv2TemplateProviderOptions opts)
     BOOST_REQUIRE(m_mining_proxy != nullptr);
 
     // Construct Template Provider with the IPC-backed Mining proxy
-    m_tp = std::make_unique<Sv2TemplateProvider>(*m_mining_proxy);
+    m_tp = std::make_unique<Sv2TemplateProvider>();
+    m_tp->ReplaceBackend(std::move(m_client_init), std::move(m_mining_proxy));
 
     CreateSock = [this](int, int, int) -> std::unique_ptr<Sock> {
         // This will be the bind/listen socket from m_tp. It will
@@ -93,18 +96,39 @@ TPTester::~TPTester()
         mp::EventLoopRef loop_ref{*m_loop};
         // Destroy objects that may post work to the loop while the loop is guaranteed alive.
         m_tp.reset();
-        m_mining_proxy.reset();
-        m_client_init.reset();
         // Server init can go after clients; it only owns exported capabilities.
         m_server_init.reset();
     } else {
         m_tp.reset();
-        m_mining_proxy.reset();
-        m_client_init.reset();
         m_server_init.reset();
     }
     // Join loop thread (loop exits automatically when refs & connections reach zero).
     if (m_loop_thread.joinable()) m_loop_thread.join();
+}
+
+void TPTester::ReconnectBackend()
+{
+    m_loop->sync([&] {
+        m_loop->m_incoming_connections.clear();
+    });
+
+    const auto deadline{std::chrono::steady_clock::now() + std::chrono::seconds{2}};
+    while (m_tp->BackendConnected() && std::chrono::steady_clock::now() < deadline) {
+        UninterruptibleSleep(std::chrono::milliseconds{10});
+    }
+    BOOST_REQUIRE(!m_tp->BackendConnected());
+
+    int fds[2];
+    BOOST_REQUIRE_EQUAL(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+    m_loop->sync([&] {
+        mp::ServeStream<ipc::capnp::messages::Init>(*m_loop, fds[0], *static_cast<MockInit*>(m_server_init.get()));
+    });
+
+    auto client_init = mp::ConnectStream<ipc::capnp::messages::Init>(*m_loop, fds[1]);
+    BOOST_REQUIRE(client_init != nullptr);
+    auto mining = client_init->makeMining();
+    BOOST_REQUIRE(mining != nullptr);
+    m_tp->ReplaceBackend(std::move(client_init), std::move(mining));
 }
 
 void TPTester::SendPeerBytes()

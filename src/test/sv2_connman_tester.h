@@ -40,6 +40,7 @@ public:
 
     void RequestTransactionData(Sv2Client& client, node::Sv2RequestTransactionDataMsg msg) override;
     void SubmitSolution(node::Sv2SubmitSolutionMsg solution) override;
+    void InterruptTemplateWaits() override {}
 };
 
 #endif // BITCOIN_TEST_SV2_CONNMAN_TESTER_H

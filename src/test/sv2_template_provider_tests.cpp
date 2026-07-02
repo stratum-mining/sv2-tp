@@ -38,6 +38,57 @@ BOOST_AUTO_TEST_CASE(block_reserved_weight_floor)
     BOOST_REQUIRE_EQUAL(options.block_reserved_weight, node::MIN_BLOCK_RESERVED_WEIGHT);
 }
 
+BOOST_AUTO_TEST_CASE(ibd_check_once_per_backend)
+{
+    TPTester tester{};
+
+    // IBD should be checked once for a backend generation, not on every main
+    // loop tick after the backend has already been accepted.
+    BOOST_REQUIRE(tester.m_mining_control->WaitForInitialBlockDownloadChecks(1));
+    const uint64_t checks{tester.m_mining_control->GetInitialBlockDownloadChecks()};
+
+    UninterruptibleSleep(std::chrono::milliseconds{350});
+    BOOST_REQUIRE_EQUAL(tester.m_mining_control->GetInitialBlockDownloadChecks(), checks);
+}
+
+BOOST_AUTO_TEST_CASE(wait_next_null_backoff)
+{
+    Sv2TemplateProviderOptions opts;
+    opts.is_test = false;
+    opts.template_interval = std::chrono::seconds{1};
+    TPTester tester{opts};
+
+    // A null waitNext() result should not spin the client handler. The retry
+    // backoff keeps repeated empty results from flooding the backend.
+    tester.m_mining_control->SetWaitNextReturnsNull(true);
+    tester.handshake();
+    tester.SendSetupConnection();
+    tester.SendCoinbaseOutputConstraints();
+    tester.ReceiveTemplatePair();
+
+    BOOST_REQUIRE(tester.m_mining_control->WaitForWaitNextCalls(1));
+    UninterruptibleSleep(std::chrono::milliseconds{350});
+    BOOST_REQUIRE_LE(tester.m_mining_control->GetWaitNextCalls(), 3);
+}
+
+BOOST_AUTO_TEST_CASE(resume_after_backend_reconnect)
+{
+    TPTester tester{};
+
+    // Existing SV2 client connections should survive a backend replacement and
+    // receive work from the new backend generation.
+    tester.handshake();
+    tester.SendSetupConnection();
+    tester.SendCoinbaseOutputConstraints();
+    tester.ReceiveTemplatePair();
+
+    const uint64_t templates_before_reconnect{tester.m_mining_control->GetTemplateSeq()};
+    tester.ReconnectBackend();
+
+    BOOST_REQUIRE(tester.m_mining_control->WaitForTemplateSeq(templates_before_reconnect + 1));
+    tester.ReceiveTemplatePair();
+}
+
 BOOST_AUTO_TEST_CASE(multiple_template_pair_trigger)
 {
     TPTester tester{};

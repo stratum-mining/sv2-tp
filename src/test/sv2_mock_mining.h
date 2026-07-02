@@ -46,13 +46,16 @@ struct MockState {
     std::queue<MockEvent> events;    // queued events driving waitNext()
     std::condition_variable_any cv;
     int wait_next_waiters{0};
+    uint64_t wait_next_calls{0};
+    uint64_t initial_block_download_checks{0};
+    bool return_null_wait_next{false};
     bool shutdown{false};
     uint64_t wait_interrupt_generation{0};
 };
 
 class MockBlockTemplate : public interfaces::BlockTemplate {
 public:
-    explicit MockBlockTemplate(std::shared_ptr<MockState> st, uint256 prev, std::vector<CTransactionRef> txs, uint64_t seq);
+    explicit MockBlockTemplate(std::shared_ptr<MockState> st, uint256 prev, std::vector<CTransactionRef> txs, uint64_t seq, CAmount total_fees);
 
     // Accessor for tests (future use). Keeps sequence from being flagged unused.
     uint64_t sequence() const { return m_sequence; }
@@ -72,6 +75,10 @@ private:
     std::shared_ptr<MockState> state;
     CBlock block;
     uint64_t m_sequence{0}; // internal sequence number (not exposed yet, reserved for future assertions)
+
+    // The mock tracks only aggregate template fees, enough for the SV2
+    // fee-delta checks without modelling per-transaction fee accounting.
+    CAmount m_total_fees{0};
 };
 
 class MockMining : public interfaces::Mining {
@@ -86,15 +93,20 @@ public:
     bool checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) override;
 
     // Accessors for tests (thread-safe)
+    uint64_t GetInitialBlockDownloadChecks();
+    uint64_t GetWaitNextCalls();
     uint64_t GetTemplateSeq();
     uint64_t GetHeight();
 
     // Test control helpers
     void TriggerFeeIncrease(std::vector<CTransactionRef> txs);
     void TriggerNewTip();
+    void SetWaitNextReturnsNull(bool value);
     void Shutdown();
 
     // Wait until internal template sequence reaches at least target (returns false on timeout/shutdown)
+    bool WaitForInitialBlockDownloadChecks(uint64_t target, std::chrono::milliseconds timeout = std::chrono::milliseconds{2000});
+    bool WaitForWaitNextCalls(uint64_t target, std::chrono::milliseconds timeout = std::chrono::milliseconds{2000});
     bool WaitForTemplateSeq(uint64_t target, std::chrono::milliseconds timeout = std::chrono::milliseconds{2000});
     bool WaitForWaitNext(std::chrono::milliseconds timeout = std::chrono::milliseconds{2000});
 

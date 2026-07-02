@@ -125,6 +125,11 @@ static void AddArgs(ArgsManager& args)
 }
 
 static bool g_interrupt{false};
+namespace {
+constexpr auto IPC_RECONNECT_INITIAL_DELAY{std::chrono::seconds{1}};
+constexpr auto IPC_RECONNECT_MAX_DELAY{std::chrono::seconds{32}};
+constexpr auto IPC_RECONNECT_POLL_INTERVAL{100ms};
+}
 
 #ifndef WIN32
 static void registerSignalHandler(int signal, void(*handler)(int))
@@ -233,32 +238,53 @@ MAIN_FUNCTION
 
     // Connect to bitcoin-node via IPC
     //
-    // If the node is not available, keep retrying in a loop every 10 seconds.
+    // If the node is not available, keep retrying in a loop.
     std::unique_ptr<interfaces::Init> mine_init{interfaces::MakeBasicInit("sv2-tp", argc > 0 ? argv[0] : "")};
     assert(mine_init);
-    std::unique_ptr<interfaces::Init> node_init;
     std::string address{args.GetArg("-ipcconnect", "unix")};
 
     LogPrintf("Attempting IPC connection to bitcoin-node at %s\n", address);
     LogPrintf("Ensure Bitcoin Core is running with '-ipcbind=unix' and the correct network (%s)\n",
               ChainTypeToString(chain_type));
 
-    while (true) {
-        try {
-            node_init = mine_init->ipc()->connectAddress(address);
-            LogPrintf("Connected to bitcoin-node via IPC at: %s\n", address);
-            break;  // Success: break out of the loop
-        } catch (const std::exception& exception) {
-            LogPrintf("IPC connection failed: %s\n", exception.what());
-            LogPrintf("Retrying in 10 seconds... (Ensure Bitcoin Core is running with '-ipcbind=unix')\n");
-            std::this_thread::sleep_for(std::chrono::seconds(10));
+    const auto connect_to_node = [&]() -> std::pair<std::unique_ptr<interfaces::Init>, std::unique_ptr<interfaces::Mining>> {
+        auto retry_delay = IPC_RECONNECT_INITIAL_DELAY;
+        while (!g_interrupt) {
+            try {
+                std::unique_ptr<interfaces::Init> node_init = mine_init->ipc()->connectAddress(address);
+                if (!node_init) {
+                    throw std::runtime_error("IPC connection returned no remote init interface");
+                }
+                std::unique_ptr<interfaces::Mining> mining = node_init->makeMining();
+                if (!mining) {
+                    throw std::runtime_error("IPC connection returned no mining interface");
+                }
+                LogPrintf("Connected to bitcoin-node via IPC at: %s\n", address);
+                return {std::move(node_init), std::move(mining)};
+            } catch (const std::exception& exception) {
+                LogPrintf("IPC connection failed: %s\n", exception.what());
+                LogPrintf("Retrying in %d seconds... (Ensure Bitcoin Core is running with '-ipcbind=unix')\n",
+                          retry_delay.count());
+                auto waited{0ms};
+                while (!g_interrupt && waited < retry_delay) {
+                    std::this_thread::sleep_for(IPC_RECONNECT_POLL_INTERVAL);
+                    waited += IPC_RECONNECT_POLL_INTERVAL;
+                }
+                retry_delay = std::min(retry_delay * 2, IPC_RECONNECT_MAX_DELAY);
+            }
         }
-    }
+        return {};
+    };
+
+    auto connection = connect_to_node();
+    auto node_init = std::move(connection.first);
+    auto mining = std::move(connection.second);
+    if (g_interrupt) return EXIT_SUCCESS;
     assert(node_init);
-    std::unique_ptr<interfaces::Mining> mining{node_init->makeMining()};
     assert(mining);
 
-    auto tp = std::make_unique<Sv2TemplateProvider>(*mining);
+    auto tp = std::make_unique<Sv2TemplateProvider>();
+    tp->ReplaceBackend(std::move(node_init), std::move(mining));
 
     if (!tp->Start(options)) {
         tfm::format(std::cerr, "Unable to start Stratum v2 Template Provider");
@@ -273,8 +299,20 @@ MAIN_FUNCTION
     registerSignalHandler(SIGINT, HandleSIGTERM);
 #endif
 
-    while(!g_interrupt) {
-        UninterruptibleSleep(100ms);
+    while (!g_interrupt) {
+        if (tp->BackendConnected()) {
+            UninterruptibleSleep(100ms);
+            continue;
+        }
+
+        LogPrintf("Bitcoin Core IPC disconnected; reconnecting before resuming template creation\n");
+        connection = connect_to_node();
+        node_init = std::move(connection.first);
+        mining = std::move(connection.second);
+        if (g_interrupt) break;
+        assert(node_init);
+        assert(mining);
+        tp->ReplaceBackend(std::move(node_init), std::move(mining));
     }
 
     tp->Interrupt();

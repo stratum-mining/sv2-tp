@@ -76,12 +76,6 @@ struct Sv2Client
     */
     std::atomic<uint64_t> m_coinbase_constraints_generation{0};
 
-    /**
-     * Pointer to the active block template that the client handler thread is currently waiting on.
-     * Guarded by cs_status to allow the connman thread to safely call interruptWait() on it.
-    */
-    std::shared_ptr<interfaces::BlockTemplate> m_current_block_template GUARDED_BY(cs_status);
-
     explicit Sv2Client(size_t id, std::unique_ptr<Sv2Transport> transport) :
                        m_id{id}, m_transport{std::move(transport)} {};
 
@@ -111,6 +105,15 @@ public:
      * We received and successfully parsed a SubmitSolution message.
      */
     virtual void SubmitSolution(node::Sv2SubmitSolutionMsg solution) = 0;
+
+    /**
+     * Wake any template-provider client handlers that are blocked in waitNext().
+     *
+     * Connman calls this after a client disconnects or changes its coinbase
+     * output constraints. The template provider owns the template cache and
+     * tracks which cached templates have a wait in progress.
+     */
+    virtual void InterruptTemplateWaits() = 0;
 
     virtual ~Sv2EventsInterface() = default;
 };
@@ -159,7 +162,11 @@ private:
      */
     [[nodiscard]] bool Bind(std::string host, uint16_t port);
 
-    void DisconnectFlagged() EXCLUSIVE_LOCKS_REQUIRED(m_clients_mutex);
+    /**
+     * Disconnect clients once their send queue has drained.
+     * Returns whether any clients were removed.
+     */
+    bool DisconnectFlagged() EXCLUSIVE_LOCKS_REQUIRED(m_clients_mutex);
 
     std::pair<size_t, bool> SendMessagesAsBytes(Sv2Client& client)
         EXCLUSIVE_LOCKS_REQUIRED(client.cs_send);

@@ -55,7 +55,7 @@ struct MockState {
 
 class MockBlockTemplate : public interfaces::BlockTemplate {
 public:
-    explicit MockBlockTemplate(std::shared_ptr<MockState> st, uint256 prev, std::vector<CTransactionRef> txs, uint64_t seq);
+    explicit MockBlockTemplate(std::shared_ptr<MockState> st, uint256 prev, std::vector<CTransactionRef> txs, uint64_t seq, CAmount total_fees);
 
     // Accessor for tests (future use). Keeps sequence from being flagged unused.
     uint64_t sequence() const { return m_sequence; }
@@ -75,6 +75,10 @@ private:
     std::shared_ptr<MockState> state;
     CBlock block;
     uint64_t m_sequence{0}; // internal sequence number (not exposed yet, reserved for future assertions)
+
+    // The mock tracks only aggregate template fees, enough for the SV2
+    // fee-delta checks without modelling per-transaction fee accounting.
+    CAmount m_total_fees{0};
 };
 
 class MockMining : public interfaces::Mining {

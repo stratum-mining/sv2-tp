@@ -18,8 +18,8 @@ static inline uint256 HashFromHeight(uint64_t h)
 }
 } // namespace
 
-MockBlockTemplate::MockBlockTemplate(std::shared_ptr<MockState> st, uint256 prev, std::vector<CTransactionRef> txs, uint64_t seq)
-    : state(std::move(st)), m_sequence(seq)
+MockBlockTemplate::MockBlockTemplate(std::shared_ptr<MockState> st, uint256 prev, std::vector<CTransactionRef> txs, uint64_t seq, CAmount total_fees)
+    : state(std::move(st)), m_sequence(seq), m_total_fees(total_fees)
 {
     // Simple internal consistency assertion: constructor sequence should not exceed state counter.
     assert(m_sequence <= state->chain.template_seq);
@@ -55,7 +55,13 @@ MockBlockTemplate::MockBlockTemplate(std::shared_ptr<MockState> st, uint256 prev
 
 CBlockHeader MockBlockTemplate::getBlockHeader() { return block.GetBlockHeader(); }
 CBlock MockBlockTemplate::getBlock() { return block; }
-std::vector<CAmount> MockBlockTemplate::getTxFees() { return {}; }
+std::vector<CAmount> MockBlockTemplate::getTxFees()
+{
+    // The real interface exposes fees per transaction. Tests only need the
+    // total fee sum to exercise waitNext fee-threshold behavior, so expose it
+    // as a single aggregate entry.
+    return m_total_fees > 0 ? std::vector<CAmount>{m_total_fees} : std::vector<CAmount>{};
+}
 std::vector<int64_t> MockBlockTemplate::getTxSigops() { return {}; }
 node::CoinbaseTx MockBlockTemplate::getCoinbaseTx() { return ExtractCoinbaseTx(block.vtx[0]); }
 std::vector<uint256> MockBlockTemplate::getCoinbaseMerklePath() { return {}; }
@@ -114,7 +120,8 @@ std::unique_ptr<interfaces::BlockTemplate> MockBlockTemplate::waitNext(node::Blo
             emit = true; // always emit on new tip
         }
         if (ev.type == MockEvent::Type::FeeIncrease) {
-            // Simulate fee increase: bump pending fee sum by +1000 sat per event regardless of tx count
+            // Model fee inflow independently from tx contents so tests can
+            // deterministically trigger or suppress fee-threshold templates.
             state->chain.pending_fee_sum += 1000;
             if (!ev.txs.empty()) state->txs = ev.txs;
             const uint64_t delta = state->chain.pending_fee_sum - state->chain.last_template_fee_sum;
@@ -130,7 +137,7 @@ std::unique_ptr<interfaces::BlockTemplate> MockBlockTemplate::waitNext(node::Blo
         auto txs = state->txs;
         uint64_t seq = ++state->chain.template_seq;
         state->chain.last_template_fee_sum = state->chain.pending_fee_sum;
-        return std::make_unique<MockBlockTemplate>(state, prev, std::move(txs), seq);
+        return std::make_unique<MockBlockTemplate>(state, prev, std::move(txs), seq, state->chain.pending_fee_sum);
     }
 }
 
@@ -157,7 +164,7 @@ std::unique_ptr<interfaces::BlockTemplate> MockMining::createNewBlock(const node
 {
     LOCK(state->m);
     uint64_t seq = ++state->chain.template_seq;
-    return std::make_unique<MockBlockTemplate>(state, state->chain.prev_hash, state->txs, seq);
+    return std::make_unique<MockBlockTemplate>(state, state->chain.prev_hash, state->txs, seq, state->chain.pending_fee_sum);
 }
 void MockMining::interrupt() { LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "mock interrupt()"); }
 bool MockMining::checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) { return true; }

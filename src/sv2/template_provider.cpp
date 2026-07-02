@@ -85,12 +85,15 @@ void Sv2TemplateProvider::DisconnectBackend(const std::shared_ptr<BackendSession
         LOCK(m_backend_mutex);
         if (m_backend == backend) {
             active_backend = m_backend;
-            LOCK(m_tp_mutex);
-            ClearTemplateCache(/*log_dropped_templates=*/true);
             m_backend.reset();
         }
     }
     if (!active_backend) return;
+
+    {
+        LOCK(m_tp_mutex);
+        ClearTemplateCache(/*log_dropped_templates=*/true);
+    }
 
     if (first_disconnect) {
         LogPrintLevel(BCLog::SV2, BCLog::Level::Error,
@@ -114,24 +117,40 @@ void Sv2TemplateProvider::InterruptBackend()
     }
     if (!backend) return;
 
-    std::vector<std::shared_ptr<BlockTemplate>> templates;
+    InterruptTemplateWaits();
+    try {
+        backend->Mining().interrupt();
+    } catch (const ipc::Exception& e) {
+        DisconnectBackend(backend, "interrupt", e);
+    }
+}
+
+void Sv2TemplateProvider::InterruptTemplateWaits()
+{
+    std::shared_ptr<BackendSession> backend;
+    std::vector<std::shared_ptr<BlockTemplate>> templates_to_interrupt;
+    {
+        LOCK(m_backend_mutex);
+        backend = m_backend;
+    }
+    if (!backend) return;
+
     {
         LOCK(m_tp_mutex);
-        for (auto& t : GetBlockTemplates()) {
-            templates.push_back(t.second.second);
+        for (const auto& cached : m_block_template_cache) {
+            const auto& cached_template{cached.second};
+            if (cached_template.wait_next_in_progress) {
+                templates_to_interrupt.push_back(cached_template.block_template);
+            }
         }
     }
-    for (const auto& block_template : templates) {
+
+    for (const auto& block_template : templates_to_interrupt) {
         try {
             block_template->interruptWait();
         } catch (const ipc::Exception& e) {
             DisconnectBackend(backend, "interruptWait", e);
         }
-    }
-    try {
-        backend->Mining().interrupt();
-    } catch (const ipc::Exception& e) {
-        DisconnectBackend(backend, "interrupt", e);
     }
 }
 
@@ -425,6 +444,7 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
         std::shared_ptr<BackendSession> template_backend;
         // Cache most recent block_template->getBlockHeader().hashPrevBlock result.
         uint256 prev_hash;
+        uint64_t current_template_id{0};
 
         // Track the coinbase constraints generation that was active when block_template was built.
         uint64_t constraints_generation_at_build = 0;
@@ -438,12 +458,14 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                 backend.reset();
                 block_template.reset();
                 template_backend.reset();
+                current_template_id = 0;
                 continue;
             }
 
             if (template_backend && template_backend != backend) {
                 block_template.reset();
                 template_backend.reset();
+                current_template_id = 0;
             }
 
             if (!block_template) {
@@ -474,8 +496,6 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                     LOCK(m_connman->m_clients_mutex);
                     std::shared_ptr client = m_connman->GetClientById(client_id);
                     if (!client) break;
-                    LOCK(client->cs_status);
-                    client->m_current_block_template = block_template;
                     constraints_generation_at_build = client->m_coinbase_constraints_generation.load();
                 }
 
@@ -499,10 +519,11 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
 
                     // Add template to cache before sending it, to prevent race
                     // condition: https://github.com/stratum-mining/stratum/issues/1773
-                    m_block_template_cache.insert({template_id,std::make_pair(prev_hash, block_template)});
+                    m_block_template_cache.insert({template_id, {prev_hash, block_template}});
+                    current_template_id = template_id;
                 }
 
-                {
+                try {
                     LOCK(m_connman->m_clients_mutex);
                     std::shared_ptr client = m_connman->GetClientById(client_id);
                     if (!client) break;
@@ -511,18 +532,16 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                         block_template = nullptr;
                         continue;
                     }
-                    try {
-                        if (!SendWork(*client, template_id, *block_template, /*future_template=*/true)) {
-                            LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "Disconnecting client id=%zu\n",
-                                        client_id);
-                            LOCK(client->cs_status);
-                            client->m_disconnect_flag = true;
-                        }
-                    } catch (const ipc::Exception& e) {
-                        DisconnectBackend(backend, "SendWork", e);
-                        backend.reset();
-                        continue;
+                    if (!SendWork(*client, template_id, *block_template, /*future_template=*/true)) {
+                        LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "Disconnecting client id=%zu\n",
+                                    client_id);
+                        LOCK(client->cs_status);
+                        client->m_disconnect_flag = true;
                     }
+                } catch (const ipc::Exception& e) {
+                    DisconnectBackend(backend, "SendWork", e);
+                    backend.reset();
+                    continue;
                 }
 
                 timer.reset();
@@ -557,15 +576,26 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
             }
 
             std::shared_ptr<BlockTemplate> tmpl;
+            const auto set_wait_next_in_progress = [&](bool in_progress) {
+                LOCK(m_tp_mutex);
+                auto it = m_block_template_cache.find(current_template_id);
+                if (it == m_block_template_cache.end()) return false;
+                it->second.wait_next_in_progress = in_progress;
+                return true;
+            };
+
+            if (!set_wait_next_in_progress(true)) break;
             try {
                 tmpl = block_template->waitNext(options);
             } catch (const ipc::Exception& e) {
+                set_wait_next_in_progress(false);
                 DisconnectBackend(template_backend, "template provider client loop", e);
                 backend.reset();
                 block_template.reset();
                 template_backend.reset();
                 continue;
             }
+            set_wait_next_in_progress(false);
             // The client may have disconnected during the wait, check now to avoid
             // a spurious IPC call and confusing log statements.
             {
@@ -590,6 +620,7 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
             if (tmpl) {
                 block_template = tmpl;
                 template_backend = backend;
+
                 uint256 new_prev_hash;
                 try {
                     new_prev_hash = block_template->getBlockHeader().hashPrevBlock;
@@ -612,41 +643,34 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                         m_last_block_time = GetTime<std::chrono::seconds>();
                     }
 
-                    ++m_template_id;
+                    current_template_id = ++m_template_id;
 
                     // Add template to cache before sending it, to prevent race
                     // condition: https://github.com/stratum-mining/stratum/issues/1773
-                    m_block_template_cache.insert({m_template_id, std::make_pair(new_prev_hash,block_template)});
+                    m_block_template_cache.insert({current_template_id, {new_prev_hash, block_template}});
                 }
 
-                {
+                try {
                     LOCK(m_connman->m_clients_mutex);
                     std::shared_ptr client = m_connman->GetClientById(client_id);
                     if (!client) break;
-
-                    {
-                        LOCK(client->cs_status);
-                        client->m_current_block_template = block_template;
-                    }
 
                     if (client->m_coinbase_constraints_generation.load() != constraints_generation_at_build) {
                         block_template = nullptr;
                         continue;
                     }
-                    try {
-                        if (!SendWork(*client, WITH_LOCK(m_tp_mutex, return m_template_id;), *block_template, future_template)) {
-                            LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "Disconnecting client id=%zu\n",
-                                        client_id);
-                            LOCK(client->cs_status);
-                            client->m_disconnect_flag = true;
-                        }
-                    } catch (const ipc::Exception& e) {
-                        DisconnectBackend(template_backend, "SendWork", e);
-                        backend.reset();
-                        block_template.reset();
-                        template_backend.reset();
-                        continue;
+                    if (!SendWork(*client, current_template_id, *block_template, future_template)) {
+                        LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "Disconnecting client id=%zu\n",
+                                    client_id);
+                        LOCK(client->cs_status);
+                        client->m_disconnect_flag = true;
                     }
+                } catch (const ipc::Exception& e) {
+                    DisconnectBackend(template_backend, "SendWork", e);
+                    backend.reset();
+                    block_template.reset();
+                    template_backend.reset();
+                    continue;
                 }
 
                 timer.reset();
@@ -659,10 +683,12 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
             }
         }
         {
-            LOCK(m_connman->m_clients_mutex);
-            if (std::shared_ptr client = m_connman->GetClientById(client_id)) {
-                LOCK(client->cs_status);
-                client->m_current_block_template =nullptr;
+            LOCK(m_tp_mutex);
+            if (current_template_id != 0) {
+                auto it = m_block_template_cache.find(current_template_id);
+                if (it != m_block_template_cache.end()) {
+                    it->second.wait_next_in_progress = false;
+                }
             }
         }
     } catch (const std::exception& e) {
@@ -689,7 +715,7 @@ void Sv2TemplateProvider::RequestTransactionData(Sv2Client& client, node::Sv2Req
 
             return;
         }
-        block_template = cached_block->second.second;
+        block_template = cached_block->second.block_template;
     }
     try {
         block = block_template->getBlock();
@@ -775,7 +801,7 @@ void Sv2TemplateProvider::SubmitSolution(node::Sv2SubmitSolutionMsg solution)
              * on the network. In case of a reorg the node will be able to switch
              * faster because it already has (but not fully validated) the block.
              */
-            block_template = cached_block_template->second.second;
+            block_template = cached_block_template->second.block_template;
         }
 
         // Submit the solution to construct and process the block
@@ -843,10 +869,12 @@ void Sv2TemplateProvider::PruneBlockTemplateCache()
 
     auto recent = GetTime<std::chrono::seconds>() - std::chrono::seconds(STALE_TEMPLATE_GRACE_PERIOD);
     if (m_last_block_time > recent) return;
-    // If the blocks prevout is not the tip's prevout, delete it.
+    // If the block's prevout is not the tip's prevout, delete it. Keep entries
+    // with waitNext() in progress so InterruptTemplateWaits() can still find
+    // and wake the blocking call.
     uint256 prev_hash = m_best_prev_hash;
     std::erase_if(m_block_template_cache, [prev_hash] (const auto& kv) {
-        if (kv.second.first != prev_hash) {
+        if (kv.second.prev_hash != prev_hash && !kv.second.wait_next_in_progress) {
             LogTrace(BCLog::SV2, "Prune stale template id=%lu (%zus after new tip)", kv.first, STALE_TEMPLATE_GRACE_PERIOD);
             return true;
         }

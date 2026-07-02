@@ -165,10 +165,22 @@ private:
     std::chrono::nanoseconds m_last_block_time GUARDED_BY(m_tp_mutex);
 
     /**
-     * A cache that maps ids used in NewTemplate messages and its associated
-     * <prevhash,block template>.
+     * Template state kept for each id sent in a NewTemplate message.
      */
-    using BlockTemplateCache = std::map<uint64_t, std::pair<uint256, std::shared_ptr<BlockTemplate>>>;
+    struct CachedBlockTemplate {
+        uint256 prev_hash;
+        std::shared_ptr<BlockTemplate> block_template;
+        bool wait_next_in_progress{false};
+    };
+
+    /**
+     * Cache of templates that connected clients may still be working on.
+     *
+     * wait_next_in_progress is tracked here, not in Sv2Client, so the template
+     * provider can interrupt only active waitNext() calls without guessing from
+     * the client's most recently sent template.
+     */
+    using BlockTemplateCache = std::map<uint64_t, CachedBlockTemplate>;
     BlockTemplateCache m_block_template_cache GUARDED_BY(m_tp_mutex);
 
 public:
@@ -235,6 +247,8 @@ public:
     void RequestTransactionData(Sv2Client& client, node::Sv2RequestTransactionDataMsg msg) EXCLUSIVE_LOCKS_REQUIRED(!m_tp_mutex) override;
 
     void SubmitSolution(node::Sv2SubmitSolutionMsg solution) EXCLUSIVE_LOCKS_REQUIRED(!m_tp_mutex) override;
+
+    void InterruptTemplateWaits() EXCLUSIVE_LOCKS_REQUIRED(!m_backend_mutex, !m_tp_mutex) override;
 
     /* Block templates that connected clients may be working on */
     BlockTemplateCache& GetBlockTemplates() EXCLUSIVE_LOCKS_REQUIRED(m_tp_mutex) { return m_block_template_cache; }

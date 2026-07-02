@@ -56,9 +56,11 @@ bool Sv2Connman::Bind(std::string host, uint16_t port)
 }
 
 
-void Sv2Connman::DisconnectFlagged()
+bool Sv2Connman::DisconnectFlagged()
 {
     AssertLockHeld(m_clients_mutex);
+
+    bool disconnected{false};
 
     // Remove clients that are flagged for disconnection.
     auto it = m_sv2_clients.begin();
@@ -69,16 +71,27 @@ void Sv2Connman::DisconnectFlagged()
         if (client->m_send_messages.empty() && client->m_disconnect_flag) {
             CloseConnection(it->second->m_id);
             it = m_sv2_clients.erase(it);
+            disconnected = true;
         } else {
             it++;
         }
     }
+
+    return disconnected;
 }
 
 void Sv2Connman::EventIOLoopCompletedForAll()
 {
-    LOCK(m_clients_mutex);
-    DisconnectFlagged();
+    bool disconnected{false};
+    {
+        LOCK(m_clients_mutex);
+        disconnected = DisconnectFlagged();
+    }
+    if (disconnected) {
+        // interruptWait() can call into IPC, so let the template provider do it
+        // after connman has released m_clients_mutex.
+        m_msgproc->InterruptTemplateWaits();
+    }
 }
 
 void Sv2Connman::Interrupt()
@@ -375,12 +388,9 @@ void Sv2Connman::ProcessSv2Message(const Sv2NetMsg& sv2_net_msg, Sv2Client& clie
         client.m_coinbase_tx_outputs_size = coinbase_output_constraints.m_coinbase_output_max_additional_size;
         client.m_coinbase_constraints_generation++;
 
-        {
-            LOCK(client.cs_status);
-            if (client.m_current_block_template != nullptr) {
-                client.m_current_block_template->interruptWait();
-            }
-        }
+        // The client handler may be blocked in waitNext() with the previous
+        // constraints. Wake active waits so it can rebuild immediately.
+        m_msgproc->InterruptTemplateWaits();
         break;
     }
     case Sv2MsgType::SUBMIT_SOLUTION: {

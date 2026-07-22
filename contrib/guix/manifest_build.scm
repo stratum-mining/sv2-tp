@@ -46,7 +46,6 @@
         tar
         gzip
         ;; Build tools
-        gcc-toolchain-14
         cmake-minimal
         gnu-make
         ;; Scripting
@@ -57,13 +56,15 @@
         python-lief-no-riscv64-failing-tests) ;; 0.17.6
   (let ((target (getenv "HOST")))
     (cond ((string-suffix? "-mingw32" target)
-           (list (make-mingw-pthreads-cross-toolchain target)
+           (list gcc-toolchain-14
+                 (make-mingw-pthreads-cross-toolchain target)
                  zip))
           ((string-contains target "-linux-")
-           (list (list gcc-toolchain-14 "static")))
+           (list gcc-toolchain-14
+                 (list gcc-toolchain-14 "static")))
           ((string-contains target "darwin")
            (list clang-toolchain-19
+                 libcxx
                  lld-19
-                 (make-lld-wrapper lld-19 #:lld-as-ld? #t)
                  zip))
           (else '())))))

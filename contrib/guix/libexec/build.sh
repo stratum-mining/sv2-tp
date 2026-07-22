@@ -8,20 +8,40 @@ set -o errexit -o pipefail
 # shellcheck source=setup.sh
 source "$(dirname "${BASH_SOURCE[0]}")/setup.sh"
 
-# Set environment variables to point the NATIVE toolchain to the right
-# includes/libs
-NATIVE_GCC="$(store_path gcc-toolchain)"
-
-# Set native toolchain
-build_CC="${NATIVE_GCC}/bin/gcc -isystem ${NATIVE_GCC}/include"
-build_CXX="${NATIVE_GCC}/bin/g++ -isystem ${NATIVE_GCC}/include/c++ -isystem ${NATIVE_GCC}/include"
-
 case "$HOST" in
-    *darwin*) export LIBRARY_PATH="${NATIVE_GCC}/lib" ;;
-    *mingw*) export LIBRARY_PATH="${NATIVE_GCC}/lib" ;;
+    *darwin*)
+        # Set toolchain
+        CLANG_TOOLCHAIN="$(store_path clang-toolchain)"
+        LIBCXX="$(store_path libcxx)"
+        build_CC="${CLANG_TOOLCHAIN}/bin/clang \
+            -isystem ${CLANG_TOOLCHAIN}/include"
+        build_CXX="${CLANG_TOOLCHAIN}/bin/clang++ \
+            -stdlib=libc++ \
+            -isystem ${LIBCXX}/include/c++/v1 \
+            -isystem ${CLANG_TOOLCHAIN}/include"
+        build_LDFLAGS="-fuse-ld=lld -rtlib=compiler-rt -unwindlib=libunwind -L${LIBCXX}/lib -Wl,-rpath,${LIBCXX}/lib"
+        build_AR="${CLANG_TOOLCHAIN}/bin/llvm-ar"
+        build_RANLIB="${CLANG_TOOLCHAIN}/bin/llvm-ranlib"
+        build_OBJDUMP="${CLANG_TOOLCHAIN}/bin/llvm-objdump"
+        build_NM="${CLANG_TOOLCHAIN}/bin/llvm-nm"
+        build_STRIP="${CLANG_TOOLCHAIN}/bin/llvm-strip"
+        ;;
     *)
-        NATIVE_GCC_STATIC="$(store_path gcc-toolchain static)"
-        export LIBRARY_PATH="${NATIVE_GCC}/lib:${NATIVE_GCC_STATIC}/lib"
+        # Set environment variables to point the NATIVE toolchain to the right
+        # includes/libs
+        NATIVE_GCC="$(store_path gcc-toolchain)"
+
+        # Set native toolchain
+        build_CC="${NATIVE_GCC}/bin/gcc -isystem ${NATIVE_GCC}/include"
+        build_CXX="${NATIVE_GCC}/bin/g++ -isystem ${NATIVE_GCC}/include/c++ -isystem ${NATIVE_GCC}/include"
+
+        case "$HOST" in
+            *mingw*) export LIBRARY_PATH="${NATIVE_GCC}/lib" ;;
+            *)
+                NATIVE_GCC_STATIC="$(store_path gcc-toolchain static)"
+                export LIBRARY_PATH="${NATIVE_GCC}/lib:${NATIVE_GCC_STATIC}/lib"
+                ;;
+        esac
         ;;
 esac
 
@@ -104,14 +124,13 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    ${BASE_CACHE+BASE_CACHE="$BASE_CACHE"} \
                                    ${SDK_PATH+SDK_PATH="$SDK_PATH"} \
                                    ${build_CC+build_CC="$build_CC"} \
-                                   ${build_CXX+build_CXX="$build_CXX"}
-
-case "$HOST" in
-    *darwin*)
-        # Unset now that depends are built
-        unset LIBRARY_PATH
-        ;;
-esac
+                                   ${build_CXX+build_CXX="$build_CXX"} \
+                                   ${build_LDFLAGS+build_LDFLAGS="$build_LDFLAGS"} \
+                                   ${build_AR+build_AR="$build_AR"} \
+                                   ${build_RANLIB+build_RANLIB="$build_RANLIB"} \
+                                   ${build_OBJDUMP+build_OBJDUMP="$build_OBJDUMP"} \
+                                   ${build_NM+build_NM="$build_NM"} \
+                                   ${build_STRIP+build_STRIP="$build_STRIP"}
 
 ###########################
 # Binary Tarball Building #

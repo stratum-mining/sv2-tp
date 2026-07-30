@@ -13,9 +13,9 @@
 namespace node {
 
 //! Default reserved weight for block assembly scaffolding (header, coinbase, etc).
-static constexpr unsigned int DEFAULT_BLOCK_RESERVED_WEIGHT{8000};
+inline constexpr unsigned int DEFAULT_BLOCK_RESERVED_WEIGHT{8000};
 //! Minimum reserved weight enforced by block assembly.
-static constexpr size_t MIN_BLOCK_RESERVED_WEIGHT{2000};
+inline constexpr size_t MIN_BLOCK_RESERVED_WEIGHT{2000};
 
 //! Weight to reserve for a client's coinbase outputs of up to
 //! max_additional_size bytes. Computed in 64 bits, so it can't overflow for

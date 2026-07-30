@@ -25,10 +25,10 @@ class ArithToUint256;
 
 namespace node {
 /** Template Distribution Protocol value used by SetupConnection. */
-static constexpr uint8_t TEMPLATE_DISTRIBUTION_PROTOCOL{0x02};
+inline constexpr uint8_t TEMPLATE_DISTRIBUTION_PROTOCOL{0x02};
 /** Supported spec versions for Template Distribution connections. */
-static constexpr uint16_t TEMPLATE_DISTRIBUTION_MIN_VERSION{2};
-static constexpr uint16_t TEMPLATE_DISTRIBUTION_MAX_VERSION{2};
+inline constexpr uint16_t TEMPLATE_DISTRIBUTION_MIN_VERSION{2};
+inline constexpr uint16_t TEMPLATE_DISTRIBUTION_MAX_VERSION{2};
 
 /**
  * A type used as the message length field in stratum v2 messages.

@@ -61,13 +61,13 @@ static const std::array<uint8_t, 6> INTERNAL_IN_IPV6_PREFIX{
 };
 
 /// Size of IPv4 address (in bytes).
-static constexpr size_t ADDR_IPV4_SIZE = 4;
+inline constexpr size_t ADDR_IPV4_SIZE = 4;
 
 /// Size of IPv6 address (in bytes).
-static constexpr size_t ADDR_IPV6_SIZE = 16;
+inline constexpr size_t ADDR_IPV6_SIZE = 16;
 
 /// Size of "internal" (NET_INTERNAL) address (in bytes).
-static constexpr size_t ADDR_INTERNAL_SIZE = 10;
+inline constexpr size_t ADDR_INTERNAL_SIZE = 10;
 
 /**
  * Network address.

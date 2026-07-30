@@ -46,11 +46,11 @@ class CScheduler;
 struct bilingual_str;
 
 /** Time after which to disconnect, after waiting for a ping response (or inactivity). */
-static constexpr std::chrono::minutes TIMEOUT_INTERVAL{20};
+inline constexpr std::chrono::minutes TIMEOUT_INTERVAL{20};
 /** Run the feeler connection loop once every 2 minutes. **/
-static constexpr auto FEELER_INTERVAL = 2min;
+inline constexpr auto FEELER_INTERVAL = 2min;
 /** Run the extra block-relay-only connection loop once every 5 minutes. **/
-static constexpr auto EXTRA_BLOCK_RELAY_ONLY_PEER_INTERVAL = 5min;
+inline constexpr auto EXTRA_BLOCK_RELAY_ONLY_PEER_INTERVAL = 5min;
 /** Maximum length of incoming protocol messages (no message over 4 MB is currently acceptable). */
 static const unsigned int MAX_PROTOCOL_MESSAGE_LENGTH = 4 * 1000 * 1000;
 /** Maximum length of the user agent string in `version` message */
@@ -68,13 +68,13 @@ static const bool DEFAULT_BLOCKSONLY = false;
 /** Number of file descriptors required for message capture **/
 static const int NUM_FDS_MESSAGE_CAPTURE = 1;
 
-static constexpr bool DEFAULT_FORCEDNSSEED{false};
-static constexpr bool DEFAULT_DNSSEED{true};
-static constexpr bool DEFAULT_FIXEDSEEDS{true};
+inline constexpr bool DEFAULT_FORCEDNSSEED{false};
+inline constexpr bool DEFAULT_DNSSEED{true};
+inline constexpr bool DEFAULT_FIXEDSEEDS{true};
 static const size_t DEFAULT_MAXRECEIVEBUFFER = 5 * 1000;
 static const size_t DEFAULT_MAXSENDBUFFER    = 1 * 1000;
 
-static constexpr bool DEFAULT_V2_TRANSPORT{true};
+inline constexpr bool DEFAULT_V2_TRANSPORT{true};
 
 typedef int64_t NodeId;
 

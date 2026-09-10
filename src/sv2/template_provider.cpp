@@ -91,7 +91,7 @@ Sv2TemplateProvider::Sv2TemplateProvider(interfaces::Mining& mining) : m_mining{
     uint16_t version = 0;
     Sv2SignatureNoiseMessage certificate = Sv2SignatureNoiseMessage(version, valid_from, valid_to, XOnlyPubKey(static_key.GetPubKey()), authority_key);
 
-    m_connman = std::make_unique<Sv2Connman>(TP_SUBPROTOCOL, static_key, m_authority_pubkey, certificate);
+    m_connman = std::make_unique<Sv2Connman>(static_key, m_authority_pubkey, certificate);
 }
 
 fs::path Sv2TemplateProvider::GetStaticKeyFile()
@@ -281,7 +281,7 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                 std::shared_ptr client = m_connman->GetClientById(client_id);
                 if (!client) return false;
 
-                // https://stratumprotocol.org/specification/07-Template-Distribution-Protocol#71-coinbaseoutputconstraints-client-server
+                // https://stratumprotocol.org/specification/07-Template-Distribution-Protocol#72-coinbaseoutputconstraints-client-server
                 // Weight units reserved for block header, transaction count,
                 // and various fixed and variable coinbase fields.
                 const size_t block_reserved_floor{1168};

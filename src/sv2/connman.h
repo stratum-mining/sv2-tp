@@ -15,17 +15,6 @@
 #include <threadsafety.h>
 #include <utility>
 
-namespace {
-    /*
-     * Supported Stratum v2 subprotocols
-     */
-    static constexpr uint8_t TP_SUBPROTOCOL{0x02};
-
-    static const std::map<uint8_t, std::string> SV2_PROTOCOL_NAMES{
-    {0x02, "Template Provider"},
-    };
-}
-
 struct Sv2Client
 {
     /* Ephemeral identifier */
@@ -115,10 +104,7 @@ public:
     virtual ~Sv2EventsInterface() = default;
 };
 
-/*
- * Handle Stratum v2 connections.
- * Currently only supports inbound connections.
- */
+/** Handle inbound Stratum V2 Template Distribution Protocol connections. */
 class Sv2Connman : SockMan
 {
 private:
@@ -126,21 +112,22 @@ private:
     Sv2EventsInterface* m_msgproc;
 
     /**
-     * The current protocol version of stratum v2 supported by the server. Not to be confused
-     * with byte value of identitying the stratum v2 subprotocol.
+     * The Stratum V2 spec version supported by the server. The protocol remains
+     * Stratum V2 regardless of this value.
      */
     const uint16_t m_protocol_version = 2;
 
     /**
-     * The currently supported optional features.
+     * Required and optional flags supported for Template Distribution Protocol
+     * clients. The protocol currently does not define any.
      */
-    const uint16_t m_optional_features = 0;
+    const uint32_t m_supported_flags{0};
 
     /**
-     * The subprotocol used in setup connection messages.
-     * An Sv2Connman only recognizes its own subprotocol.
+     * Low-half flags required by this Template Distribution Protocol server. The
+     * protocol currently does not define any.
      */
-    const uint8_t m_subprotocol;
+    const uint32_t m_required_flags{0};
 
     CKey m_static_key;
 
@@ -203,8 +190,8 @@ private:
     std::vector<node::Sv2NetMsg> ReadAndDecryptSv2NetMsgs(Sv2Client& client, std::span<std::byte> buffer);
 
 public:
-    Sv2Connman(uint8_t subprotocol, CKey static_key, XOnlyPubKey authority_pubkey, Sv2SignatureNoiseMessage certificate) :
-               m_subprotocol(subprotocol), m_static_key(static_key), m_authority_pubkey(authority_pubkey), m_certificate(certificate) {};
+    Sv2Connman(CKey static_key, XOnlyPubKey authority_pubkey, Sv2SignatureNoiseMessage certificate) :
+               m_static_key(static_key), m_authority_pubkey(authority_pubkey), m_certificate(certificate) {};
 
     ~Sv2Connman();
 

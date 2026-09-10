@@ -24,6 +24,13 @@ class CTxOut;
 class ArithToUint256;
 
 namespace node {
+/** Template Distribution Protocol value used by SetupConnection. */
+static constexpr uint8_t TEMPLATE_DISTRIBUTION_PROTOCOL{0x02};
+
+/** SetupConnection flag ranges. */
+static constexpr uint32_t SETUP_CONNECTION_REQUIRED_FLAGS_MASK{0x0000ffff};
+static constexpr uint32_t SETUP_CONNECTION_OPTIONAL_FLAGS_MASK{0xffff0000};
+
 /**
  * A type used as the message length field in stratum v2 messages.
  */
@@ -82,8 +89,8 @@ struct Sv2SetupConnectionMsg
     uint16_t m_max_version;
 
     /**
-     * Flags indicating optional protocol features the client supports. Each protocol
-     * from the protocol field has its own values/flags.
+     * Flags indicating protocol features the client requires (bits 0-15) or
+     * optionally requests (bits 16-31). Each protocol has its own flags.
      */
     uint32_t m_flags;
 
@@ -180,8 +187,8 @@ struct Sv2CoinbaseOutputConstraintsMsg
 
 /**
  * Response to the SetupConnection message if the server accepts the connection.
- * The client is required to verify the set of feature flags that the server
- * supports and act accordingly.
+ * The client is required to verify the set of feature flags set by the server
+ * and act accordingly.
  */
 struct Sv2SetupConnectionSuccessMsg
 {
@@ -197,8 +204,8 @@ struct Sv2SetupConnectionSuccessMsg
     uint16_t m_used_version;
 
     /**
-     * Flags indicating optional protocol features the server supports. Each protocol
-     * from protocol field has its own values/flags.
+     * Flags indicating protocol features the server requires (bits 0-15) and
+     * optional client requests it accepts (bits 16-31).
      */
     uint32_t m_flags;
 
@@ -219,10 +226,7 @@ struct Sv2SetupConnectionErrorMsg
 {
     static constexpr auto m_msg_type = Sv2MsgType::SETUP_CONNECTION_ERROR;
 
-    /**
-     * Flags indicating optional protocol features the server supports. Each protocol
-     * from protocol field has its own values/flags.
-     */
+    /** Flags indicating features causing an error. */
     uint32_t m_flags;
 
     /**

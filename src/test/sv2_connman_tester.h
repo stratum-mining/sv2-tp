@@ -7,6 +7,7 @@
 #include <test/util/net.h>
 
 #include <memory>
+#include <utility>
 
 /**
   * A class for testing the Sv2Connman. Each ConnTester encapsulates a
@@ -32,11 +33,15 @@ public:
 
     void RemoteToLocalBytes();
     size_t LocalToRemoteBytes();
+    std::pair<Sv2NetMsg, size_t> LocalToRemoteMsg();
     void handshake();
     void RemoteToLocalMsg(Sv2NetMsg& msg);
     bool IsConnected();
     bool IsFullyConnected();
-    Sv2NetMsg SetupConnectionMsg();
+    Sv2NetMsg SetupConnectionMsg(uint8_t protocol = node::TEMPLATE_DISTRIBUTION_PROTOCOL,
+                                 uint16_t min_version = 2,
+                                 uint16_t max_version = 2,
+                                 uint32_t flags = 0);
 
     void RequestTransactionData(Sv2Client& client, node::Sv2RequestTransactionDataMsg msg) override;
     void SubmitSolution(node::Sv2SubmitSolutionMsg solution) override;

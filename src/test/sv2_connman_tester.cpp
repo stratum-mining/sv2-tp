@@ -24,7 +24,7 @@ ConnTester::ConnTester()
     uint32_t valid_to{0};
     Sv2SignatureNoiseMessage certificate = MakeSkewTolerantCertificate(static_key, authority_key, now_secs, valid_from, valid_to);
 
-    m_connman = std::make_unique<Sv2Connman>(TP_SUBPROTOCOL, static_key, m_connman_authority_pubkey, certificate);
+    m_connman = std::make_unique<Sv2Connman>(static_key, m_connman_authority_pubkey, certificate);
 
     BOOST_REQUIRE(m_connman->Start(this, "127.0.0.1", 18447));
 }
@@ -51,6 +51,16 @@ size_t ConnTester::LocalToRemoteBytes()
     return Sv2TestAccumulateRecv(m_current_client_pipes,
         [this](std::span<const uint8_t> frag) { return m_remote_transport->ReceivedBytes(frag); },
         std::chrono::milliseconds{1000}, "connman_local_to_remote", /*allow_zero_first=*/true);
+}
+
+std::pair<Sv2NetMsg, size_t> ConnTester::LocalToRemoteMsg()
+{
+    const size_t bytes{LocalToRemoteBytes()};
+    BOOST_REQUIRE(m_remote_transport->ReceivedMessageComplete());
+    bool reject_message{false};
+    CNetMessage net_msg{m_remote_transport->GetReceivedMessage(std::chrono::microseconds{0}, reject_message)};
+    BOOST_REQUIRE(!reject_message);
+    return {Sv2NetMsg{std::move(net_msg)}, bytes};
 }
 
 /* Create a new client and perform handshake */
@@ -107,23 +117,23 @@ bool ConnTester::IsFullyConnected()
     return m_connman->FullyConnectedClients() > 0;
 }
 
-Sv2NetMsg ConnTester::SetupConnectionMsg()
+Sv2NetMsg ConnTester::SetupConnectionMsg(uint8_t protocol, uint16_t min_version,
+                                         uint16_t max_version, uint32_t flags)
 {
-    std::vector<uint8_t> bytes{
-        0x02,                                                 // protocol
-        0x02, 0x00,                                           // min_version
-        0x02, 0x00,                                           // max_version
-        0x01, 0x00, 0x00, 0x00,                               // flags
-        0x07, 0x30, 0x2e, 0x30, 0x2e, 0x30, 0x2e, 0x30,       // endpoint_host
-        0x61, 0x21,                                           // endpoint_port
-        0x07, 0x42, 0x69, 0x74, 0x6d, 0x61, 0x69, 0x6e,       // vendor
-        0x08, 0x53, 0x39, 0x69, 0x20, 0x31, 0x33, 0x2e, 0x35, // hardware_version
-        0x1c, 0x62, 0x72, 0x61, 0x69, 0x69, 0x6e, 0x73, 0x2d, 0x6f, 0x73, 0x2d, 0x32, 0x30,
-        0x31, 0x38, 0x2d, 0x30, 0x39, 0x2d, 0x32, 0x32, 0x2d, 0x31, 0x2d, 0x68, 0x61, 0x73,
-        0x68, // firmware
-        0x10, 0x73, 0x6f, 0x6d, 0x65, 0x2d, 0x64, 0x65, 0x76, 0x69, 0x63, 0x65, 0x2d, 0x75,
-        0x75, 0x69, 0x64, // device_id
-    };
+    DataStream ss{};
+    ss << protocol
+       << min_version
+       << max_version
+       << flags
+       << std::string{"0.0.0.0"}
+       << uint16_t{8545}
+       << std::string{"Bitmain"}
+       << std::string{"S9i 13.5"}
+       << std::string{"braiins-os-2018-09-22-1-hash"}
+       << std::string{"some-device-uuid"};
+
+    std::vector<uint8_t> bytes(ss.size());
+    ss >> MakeWritableByteSpan(bytes);
 
     return node::Sv2NetMsg{node::Sv2MsgType::SETUP_CONNECTION, std::move(bytes)};
 }

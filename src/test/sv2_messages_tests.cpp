@@ -105,7 +105,7 @@ BOOST_AUTO_TEST_CASE(Sv2SetupConnectionError_test)
 BOOST_AUTO_TEST_CASE(Sv2NewTemplate_test)
 {
     // NewTemplate
-    // https://github.com/stratum-mining/sv2-spec/blob/main/07-Template-Distribution-Protocol.md#72-newtemplate-server---client
+    // https://github.com/stratum-mining/sv2-spec/blob/main/07-Template-Distribution-Protocol.md#73-newtemplate-server---client
     //
     // U64              0100000000000000    template_id
     // BOOL             00                  future_template

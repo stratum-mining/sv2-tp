@@ -58,12 +58,6 @@ private:
     */
     interfaces::Mining& m_mining;
 
-    /*
-     * The template provider subprotocol used in setup connection messages. The stratum v2
-     * template provider only recognizes its own subprotocol.
-     */
-    static constexpr uint8_t TP_SUBPROTOCOL{0x02};
-
     std::unique_ptr<Sv2Connman> m_connman;
 
     /** Get name of file to store static key */

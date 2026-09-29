@@ -8,6 +8,7 @@
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -97,6 +98,9 @@ class Scenario:
                             [self.backend, provider], "sv2-tp IPC connection")
             if self.args.scenario == "mining":
                 self.mine(provider, fixtures)
+                if self.args.expect_memory_load:
+                    log = (self.logs / "sv2-tp.log").read_text(encoding="utf-8", errors="replace")
+                    assert re.search(r"Template memory footprint [0-9.]+ MiB", log), "Missing getMemoryLoad() memory footprint log"
                 if self.args.expect_legacy_interface:
                     assert self.log_contains("The IPC error above is expected when connecting to Bitcoin Core v31"), "Legacy mining interface was not selected"
                 print("PASS: mining", flush=True)
@@ -160,6 +164,7 @@ def main():
     parser.add_argument("scenario", choices=["mining", "backend-disconnect"])
     parser.add_argument("--runtime-root", type=Path, required=True, help="Working directory (datadir and logs are reset)")
     parser.add_argument("--expect-legacy-interface", action="store_true", help="Check v31 legacy IPC detection")
+    parser.add_argument("--expect-memory-load", action="store_true", help="Require getMemoryLoad() reporting when mining")
     for binary in ["bitcoin-node", "bitcoin-cli", "sv2-tp", "pool", "miner"]:
         parser.add_argument(f"--{binary}", type=lambda value: Path(value).resolve(), required=binary not in ["pool", "miner"])
     args = parser.parse_args()

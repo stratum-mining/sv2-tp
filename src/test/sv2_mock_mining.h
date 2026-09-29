@@ -19,6 +19,8 @@
 #include <sync.h>
 #include <uint256.h>
 
+using interfaces::MemoryLoad;
+
 // Minimal mocks for the Mining IPC interface used by sv2 tests.
 
 struct MockEvent {
@@ -55,6 +57,7 @@ struct MockState {
     std::queue<MockEvent> events;    // queued events driving waitNext()
     std::condition_variable_any cv;
     int wait_next_waiters{0};
+    MemoryLoad memory_load;
     bool shutdown{false};
     uint64_t wait_interrupt_generation{0};
 };
@@ -100,6 +103,8 @@ public:
     bool checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) override;
     bool submitBlock(const CBlock&, std::string&, std::string&) override;
     std::vector<CTransactionRef> getTransactionsByTxID(const std::vector<Txid>&) override;
+    std::vector<CTransactionRef> getTransactionsByWitnessID(const std::vector<Wtxid>&) override { return {}; }
+    MemoryLoad getMemoryLoad() override;
 
     // Accessors for tests (thread-safe)
     uint64_t GetTemplateSeq();
@@ -111,6 +116,7 @@ public:
     //! concurrent waitNext() caller, each of which returns a template for the
     //! new tip.
     void TriggerNewTip();
+    void SetMemoryLoad(uint64_t usage);
     void Shutdown();
 
     // Wait until internal template sequence reaches at least target (returns false on timeout/shutdown)

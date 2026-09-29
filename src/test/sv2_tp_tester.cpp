@@ -64,6 +64,14 @@ public:
     {
         throw ipc::Exception("kj::Exception: remote exception: Method not implemented.");
     }
+    std::vector<CTransactionRef> getTransactionsByWitnessID(const std::vector<Wtxid>&) override
+    {
+        throw ipc::Exception("kj::Exception: remote exception: Method not implemented.");
+    }
+    interfaces::MemoryLoad getMemoryLoad() override
+    {
+        throw ipc::Exception("kj::Exception: remote exception: Method not implemented.");
+    }
 
 private:
     std::unique_ptr<interfaces::Mining> m_mining;

@@ -2,6 +2,7 @@
 #include <interfaces/init.h>
 #include <interfaces/mining.h>
 #include <ipc/exception.h>
+#include <logging.h>
 #include <sv2/block_options.h>
 #include <sv2/messages.h>
 #include <test/sv2_test_setup.h>
@@ -18,9 +19,11 @@
 #include <test/sv2_tp_tester.h>
 
 #include <algorithm>
+#include <condition_variable>
 #include <exception>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -56,6 +59,57 @@ BOOST_AUTO_TEST_CASE(multiple_template_pair_trigger)
     // Send another SendCoinbaseOutputConstraints to receive second ReceiveTemplatePair
     tester.SendCoinbaseOutputConstraints();
     tester.ReceiveTemplatePair();
+}
+
+BOOST_AUTO_TEST_CASE(memory_load_log)
+{
+    auto& logger{LogInstance()};
+    logger.DisconnectTestLogger();
+    logger.m_print_to_console = false;
+    logger.m_print_to_file = false;
+    logger.m_log_timestamps = false;
+    logger.EnableCategory(BCLog::SV2);
+    logger.SetCategoryLogLevel({{BCLog::SV2, BCLog::Level::Trace}});
+
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool found{false};
+    auto callback{logger.PushBackCallback([&](const std::string& line) {
+        if (line.find("Template memory footprint 2.000 MiB") == std::string::npos) return;
+        {
+            std::lock_guard<std::mutex> lock{mutex};
+            found = true;
+        }
+        cv.notify_one();
+    })};
+    struct LoggerCleanup {
+        BCLog::Logger& logger;
+        decltype(callback) callback_it;
+        ~LoggerCleanup()
+        {
+            logger.DeleteCallback(callback_it);
+            logger.DisableCategory(BCLog::SV2);
+            logger.SetCategoryLogLevel({});
+        }
+    } logger_cleanup{logger, callback};
+    BOOST_REQUIRE(logger.StartLogging());
+
+    bool saw_log{false};
+    {
+        TPTester tester{};
+        tester.m_mining_control->SetMemoryLoad(2 * 1024 * 1024);
+
+        // Jump to the next 60 second reporting interval. Retry a few times to
+        // avoid depending on exactly when the memory thread started.
+        for (int attempt{0}; attempt < 3 && !saw_log; ++attempt) {
+            SetMockTime(GetMockTime() + std::chrono::seconds{60});
+            std::unique_lock<std::mutex> lock{mutex};
+            saw_log = cv.wait_for(lock, std::chrono::milliseconds{1500}, [&] { return found; });
+        }
+        tester.m_mining_control->Shutdown();
+    }
+
+    BOOST_REQUIRE(saw_log);
 }
 
 BOOST_AUTO_TEST_CASE(client_tests)

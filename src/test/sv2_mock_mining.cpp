@@ -186,6 +186,12 @@ bool MockMining::checkBlock(const CBlock&, const node::BlockCheckOptions&, std::
 bool MockMining::submitBlock(const CBlock&, std::string&, std::string&) { return true; }
 std::vector<CTransactionRef> MockMining::getTransactionsByTxID(const std::vector<Txid>&) { return {}; }
 
+MemoryLoad MockMining::getMemoryLoad()
+{
+    LOCK(state->m);
+    return state->memory_load;
+}
+
 uint64_t MockMining::GetTemplateSeq()
 {
     LOCK(state->m);
@@ -224,6 +230,11 @@ void MockMining::TriggerNewTip()
     state->chain.height++;
     state->chain.prev_hash = HashFromHeight(state->chain.height);
     state->cv.notify_all();
+}
+void MockMining::SetMemoryLoad(uint64_t usage)
+{
+    LOCK(state->m);
+    state->memory_load = {.usage = usage};
 }
 void MockMining::Shutdown()
 {

@@ -187,6 +187,9 @@ run_scenario()
     if [[ -z "${BITCOIN_CORE_REF}" && "${BITCOIN_CORE_VERSION}" == 31.* ]]; then
         scenario_args+=(--expect-legacy-interface)
     fi
+    if [[ "${EXPECT_MEMORY_LOAD:-false}" == true ]]; then
+        scenario_args+=(--expect-memory-load)
+    fi
     python3 "${REPO_ROOT}/ci/test/stratum_v2_scenario.py" "${scenario}" "${scenario_args[@]}"
 }
 

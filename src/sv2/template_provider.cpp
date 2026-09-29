@@ -21,6 +21,8 @@
 #include <limits>
 #include <string_view>
 
+using interfaces::MemoryLoad;
+
 // Allow a few seconds for clients to submit a block or to request transactions
 constexpr size_t STALE_TEMPLATE_GRACE_PERIOD{10};
 
@@ -136,6 +138,8 @@ bool Sv2TemplateProvider::Start(const Sv2TemplateProviderOptions& options)
     }
 
     m_thread_sv2_handler = std::thread(&util::TraceThread, "sv2", [this] { ThreadSv2Handler(); });
+    m_thread_memory_handler = std::thread(&util::TraceThread, "memory", [this] { ThreadMemoryHandler(); });
+
     return true;
 }
 
@@ -192,6 +196,9 @@ void Sv2TemplateProvider::StopThreads()
 {
     if (m_thread_sv2_handler.joinable()) {
         m_thread_sv2_handler.join();
+    }
+    if (m_thread_memory_handler.joinable()) {
+        m_thread_memory_handler.join();
     }
 }
 
@@ -291,6 +298,30 @@ void Sv2TemplateProvider::ThreadSv2Handler()
     }
 
 
+}
+
+void Sv2TemplateProvider::ThreadMemoryHandler()
+{
+    Timer timer{m_options.memory_check_interval};
+    while (!m_flag_interrupt_sv2) {
+        std::this_thread::sleep_for(1000ms);
+        if (!timer.trigger()) continue;
+        try {
+            if (m_mining.isInitialBlockDownload()) continue;
+            MemoryLoad memory_load{m_mining.getMemoryLoad()};
+            const double usage_mib{static_cast<double>(memory_load.usage) / (1024.0 * 1024.0)};
+            const std::string usage_mib_str{strprintf("%.3f", usage_mib)};
+            LogTrace(BCLog::SV2, "Template memory footprint %s MiB", usage_mib_str);
+        } catch (const ipc::Exception& e) {
+            if (std::string_view{e.what()}.find("Method not implemented.") != std::string_view::npos) {
+                LogTrace(BCLog::SV2, "getMemoryLoad() not implemented on the node");
+            } else {
+                LogPrintf("Unable to query template memory usage: %s\n", e.what());
+            }
+            // Nothing to do for this thread
+            break;
+        }
+    }
 }
 
 void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)

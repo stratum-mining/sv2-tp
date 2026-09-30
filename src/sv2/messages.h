@@ -8,6 +8,7 @@
 #include <net.h> // for CSerializedNetMsg and CNetMessage
 #include <consensus/validation.h>
 #include <cstdint>
+#include <optional>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <span.h>
@@ -284,6 +285,14 @@ struct Sv2NewTemplateMsg
     CScript m_coinbase_prefix;
 
     /**
+     * The optional first (and only) witness stack element of the coinbase.
+     *
+     * Omitted when no witness commitment output is present in
+     * m_coinbase_tx_outputs.
+     */
+    std::optional<uint256> m_coinbase_witness;
+
+    /**
      * The coinbase transaction input’s nSequence field.
      */
     uint32_t m_coinbase_tx_input_sequence;
@@ -325,8 +334,14 @@ struct Sv2NewTemplateMsg
           << m_future_template
           << m_version
           << m_coinbase_tx_version
-          << m_coinbase_prefix
-          << m_coinbase_tx_input_sequence
+          << m_coinbase_prefix;
+
+        // OPTION[U256] is encoded as a one-byte element count followed by the
+        // value when present.
+        s << uint8_t{m_coinbase_witness.has_value()};
+        if (m_coinbase_witness.has_value()) s << *m_coinbase_witness;
+
+        s << m_coinbase_tx_input_sequence
           << m_coinbase_tx_value_remaining
           << m_coinbase_tx_outputs_count;
 

@@ -11,15 +11,20 @@
 #include <test/util/net.h>
 #include <util/sock.h>
 
+#include <array>
 #include <cstdint>
 #include <memory>
+#include <mp/util.h>
 #include <thread>
 #include <vector>
 
 // Forward declarations
 class Sv2Transport;
 namespace mp { class EventLoop; }
+namespace mp { class Connection; }
 namespace interfaces { class Init; class Mining; }
+
+struct MockInit;
 
 //! Which version of the mining interface the simulated node has. Methods that
 //! it does not have throw, like they do when the IPC layer finds that the
@@ -47,9 +52,10 @@ private:
     // IPC loopback components
     std::thread m_loop_thread;
     mp::EventLoop* m_loop{nullptr};
-    std::unique_ptr<interfaces::Init> m_server_init;
+    std::unique_ptr<mp::Connection> m_server_connection;
+    std::unique_ptr<MockInit> m_server_init;
     std::unique_ptr<interfaces::Init> m_client_init;
-    int m_ipc_fds[2]{-1, -1};
+    std::array<mp::SocketId, 2> m_ipc_fds{mp::SocketError, mp::SocketError};
 
 public:
     std::unique_ptr<Sv2TemplateProvider> m_tp; //!< Sv2TemplateProvider being tested
@@ -97,6 +103,23 @@ public:
         2 + 56 +            // B0_64K: length prefix (2 bytes) + 2 outputs (witness commitment 43 bytes + merge mining 13 bytes)
         4 +                 // coinbase_tx_locktime
         1;                  // merkle_path count (CompactSize(0))
+};
+
+/**
+ * RAII handle around a TPTester. Owns the tester by value and tears it down
+ * at scope exit.
+ */
+class TPTesterHandle {
+public:
+    TPTesterHandle() : TPTesterHandle(Sv2TemplateProviderOptions{.is_test = true}) {}
+    explicit TPTesterHandle(Sv2TemplateProviderOptions opts) : m_owned(opts), m_tester(m_owned) {}
+
+    TPTester* operator->() noexcept { return &m_tester; }
+    TPTester& operator*() noexcept { return m_tester; }
+
+private:
+    TPTester m_owned;
+    TPTester& m_tester;
 };
 
 #endif // BITCOIN_TEST_SV2_TP_TESTER_H

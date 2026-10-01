@@ -61,7 +61,8 @@ BOOST_AUTO_TEST_CASE(multiple_template_pair_trigger)
 
 BOOST_AUTO_TEST_CASE(client_tests)
 {
-    TPTester tester{};
+    TPTesterHandle tester_handle{};
+    TPTester& tester = *tester_handle;
 
     tester.handshake();
 
@@ -398,7 +399,8 @@ BOOST_AUTO_TEST_CASE(fee_timer_blocking_test)
     Sv2TemplateProviderOptions opts;
     opts.is_test = false;
     opts.template_interval = std::chrono::seconds{2};
-    TPTester tester{opts};
+    TPTesterHandle tester_handle{opts};
+    TPTester& tester = *tester_handle;
 
     tester.handshake();
     tester.SendSetupConnection();
@@ -441,7 +443,8 @@ BOOST_AUTO_TEST_CASE(new_tip_bypasses_fee_timer_test)
     Sv2TemplateProviderOptions opts;
     opts.is_test = false;
     opts.template_interval = std::chrono::seconds{10};
-    TPTester tester{opts};
+    TPTesterHandle tester_handle{opts};
+    TPTester& tester = *tester_handle;
 
     tester.handshake();
     tester.SendSetupConnection();

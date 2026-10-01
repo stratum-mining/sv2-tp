@@ -12,3 +12,8 @@ on:
 jobs:
   sri-integration-test:
     uses: ./.github/workflows/sri-integration-test.yml
+
+  sri-integration-test-windows:
+    uses: ./.github/workflows/sri-integration-test-windows.yml
+    with:
+      windows-compiler: MSVC

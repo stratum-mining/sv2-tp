@@ -10,6 +10,7 @@
 #include <mp/type-threadmap.h>
 #include <mp/util.h>
 
+#include <any>
 #include <atomic>
 #include <capnp/capability.h>
 #include <capnp/common.h> // IWYU pragma: keep
@@ -40,11 +41,36 @@
 
 namespace mp {
 
-thread_local ThreadContext g_thread_context; // NOLINT(bitcoin-nontrivial-threadlocal)
-
 ThreadContext& CurrentThread()
 {
-    return g_thread_context;
+#ifdef __MINGW32__
+    // On MinGW only, deliberately leak a heap object instead of using a plain
+    // thread_local variable, because MinGW-w64's emutls implementation can
+    // free the storage backing thread_local variables before C++ destructors
+    // registered by __cxa_thread_atexit run at thread exit (pthread key
+    // destructor order is unspecified), so a nontrivial thread_local
+    // destructor can run on freed memory and corrupt the heap. Observed as
+    // intermittent STATUS_HEAP_CORRUPTION (0xC0000374) crashes in msvcrt
+    // builds. See the full explanation, gdb evidence, and mingw-w64 bug
+    // tracker links (bugs 527, 727, 445, 859, msys2 issue 2519) in the
+    // CurrentThread() declaration comment in proxy-io.h. The leaked object
+    // is held by a trivially-destructible thread_local pointer so no
+    // destructor is registered at thread exit at all.
+    //
+    // The leak is confined to MinGW because the number of IPC threads a
+    // process can create is unbounded, so leaking per-thread state on
+    // platforms with working thread_local destruction would be a real
+    // resource leak. TODO: a better long-term fix could explicitly destroy
+    // the context at the end of mp-managed thread routines (the
+    // EventLoop::loop thread, the EventLoop async thread, and
+    // ProxyServer<ThreadMap>::makeThread threads), so that even on MinGW the
+    // leak would only apply to externally-created client threads.
+    thread_local ThreadContext* context{new ThreadContext};
+    return *context;
+#else
+    thread_local ThreadContext context; // NOLINT(bitcoin-nontrivial-threadlocal)
+    return context;
+#endif
 }
 
 Stream MakeStream(EventLoop&loop, SocketId socket)
@@ -231,7 +257,41 @@ void Connection::removeSyncCleanup(CleanupIt it)
     m_sync_cleanup_fns.erase(it);
 }
 
-void EventLoop::addAsyncCleanup(std::function<void()> fn)
+#ifdef WIN32
+//! Synchronous socket output stream. Cap'n Proto library only provides limited
+//! support for synchronous IO. It provides `FdOutputStream` which wraps unix
+//! file descriptors and calls write() internally, and `HandleOutStream` which
+//! wraps windows HANDLE values and calls WriteFile() internally. This class
+//! just provides analogous functionality wrapping SOCKET values and calls
+//! send() internally.
+class SocketOutputStream : public kj::OutputStream {
+public:
+  explicit SocketOutputStream(SOCKET socket) : m_socket(socket) {}
+
+  void write(const void* buffer, size_t size) override;
+
+private:
+  SOCKET m_socket;
+};
+
+static constexpr size_t WRITE_CLAMP_SIZE = 1u << 30;  // 1GB clamp for Windows, like FdOutputStream
+
+void SocketOutputStream::write(const void* buffer, size_t size) {
+  const char* pos = reinterpret_cast<const char*>(buffer);
+
+  while (size > 0) {
+    int n = send(m_socket, pos, static_cast<int>(kj::min(size, WRITE_CLAMP_SIZE)), 0);
+
+    KJ_WIN32(n != SOCKET_ERROR, "send() failed");
+    KJ_ASSERT(n > 0, "send() returned zero.");
+
+    pos += n;
+    size -= n;
+  }
+}
+#endif
+
+void EventLoop::addAsyncCleanup(kj::Function<void()> fn)
 {
     const Lock lock(m_mutex);
     // Add async cleanup callbacks to the back of the list. Unlike the sync
@@ -266,6 +326,10 @@ EventLoop::EventLoop(const char* exe_name, LogOptions log_opts, void* context)
     m_post_stream = kj::mv(pipe.ends[1]);
     KJ_IF_MAYBE(fd, m_post_stream->getFd()) {
         m_post_writer = kj::heap<kj::FdOutputStream>(*fd);
+#ifdef WIN32
+    } else KJ_IF_MAYBE(handle, m_post_stream->getWin32Handle()) {
+        m_post_writer = kj::heap<SocketOutputStream>(reinterpret_cast<SOCKET>(*handle));
+#endif
     } else {
         throw std::logic_error("Could not get file descriptor for new pipe.");
     }
@@ -363,7 +427,7 @@ void EventLoop::startAsyncThread()
             while (m_async_fns) {
                 if (!m_async_fns->empty()) {
                     EventLoopRef ref{*this, &lock};
-                    const std::function<void()> fn = std::move(m_async_fns->front());
+                    kj::Function<void()> fn = std::move(m_async_fns->front());
                     m_async_fns->pop_front();
                     Unlock(lock, fn);
                     // Important to relock because of the wait() call below.
@@ -440,11 +504,8 @@ ProxyServer<Thread>::ProxyServer(Connection& connection, ThreadContext& thread_c
 ProxyServer<Thread>::~ProxyServer()
 {
     if (!m_thread.joinable()) return;
-    // Stop async thread and wait for it to exit. Need to wait because the
-    // m_thread handle needs to outlive the thread to avoid "terminate called
-    // without an active exception" error. An alternative to waiting would be
-    // detach the thread, but this would introduce nondeterminism which could
-    // make code harder to debug or extend.
+    // Signal the worker to stop, then join it on the async cleanup thread
+    // so the event loop remains available until the worker has exited.
     assert(m_thread_context.waiter.get());
     std::unique_ptr<Waiter> waiter;
     {
@@ -454,16 +515,24 @@ ProxyServer<Thread>::~ProxyServer()
         waiter = std::move(m_thread_context.waiter);
         //! Assert waiter is idle. This destructor shouldn't be getting called if it is busy.
         assert(!waiter->m_fn);
-        // Clear client maps now to avoid deadlock in m_thread.join() call
-        // below. The maps contain Thread::Client objects that need to be
-        // destroyed from the event loop thread (this thread), which can't
-        // happen if this thread is busy calling join.
+        // Clear client maps now, before scheduling the async cleanup below.
+        // The maps contain Thread::Client objects that need to be destroyed
+        // from the event loop thread (this thread), rather than during worker
+        // thread-local destruction.
         m_thread_context.request_threads.clear();
         m_thread_context.callback_threads.clear();
         //! Ping waiter.
         waiter->m_cv.notify_all();
     }
-    m_thread.join();
+    // On MSVC, client ThreadContext destructors run under the Windows loader
+    // lock and call EventLoop::sync(). Joining here can deadlock: the client
+    // waits for this event loop, while the worker needs the loader lock to
+    // finish exiting. Keep the event loop available while the worker exits.
+    // Retain the waiter until join completes because the worker still uses
+    // its mutex and condition variable while returning from Waiter::wait().
+    m_loop->addAsyncCleanup([thread = std::move(m_thread), waiter = std::move(waiter)]() mutable {
+        thread.join();
+    });
 }
 
 kj::Promise<void> ProxyServer<Thread>::getName(GetNameContext context)
@@ -508,12 +577,15 @@ kj::Promise<void> ProxyServer<ThreadMap>::makeThread(MakeThreadContext context)
         SetOsThreadName("capnp-worker");
         CurrentThread().thread_name = ThreadName(loop.m_exe_name) + " (from " + from + ")";
         CurrentThread().waiter = std::make_unique<Waiter>();
-        Lock lock(CurrentThread().waiter->m_mutex);
-        thread_context.set_value(&CurrentThread());
-        if (loop.testing_hook_makethread_created) loop.testing_hook_makethread_created();
-        // Wait for shutdown signal from ProxyServer<Thread> destructor (signal
-        // is just waiter getting set to null.)
-        CurrentThread().waiter->wait(lock, [] { return !CurrentThread().waiter; });
+        {
+            Lock lock(CurrentThread().waiter->m_mutex);
+            thread_context.set_value(&CurrentThread());
+            if (loop.testing_hook_makethread_created) loop.testing_hook_makethread_created();
+            // Wait for shutdown signal from ProxyServer<Thread> destructor (signal
+            // is just waiter getting set to null.)
+            CurrentThread().waiter->wait(lock, [] { return !CurrentThread().waiter; });
+        }
+        if (loop.testing_hook_misc) loop.testing_hook_misc("worker thread exit");
     });
     auto thread_server = kj::heap<ProxyServer<Thread>>(m_connection, *thread_context.get_future().get(), std::move(thread));
     auto thread_client = m_connection.m_threads.add(kj::mv(thread_server));

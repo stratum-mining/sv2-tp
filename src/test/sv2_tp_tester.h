@@ -82,7 +82,7 @@ public:
     static constexpr size_t SV2_SET_NEW_PREV_HASH_MSG_SIZE =
         8 +                 // template_id
         32 +                // prev_hash
-        4 +                 // header_timestamp
+        4 +                 // ntime_start
         4 +                 // nBits
         32;                 // target
     static constexpr size_t SV2_NEW_TEMPLATE_MSG_SIZE =

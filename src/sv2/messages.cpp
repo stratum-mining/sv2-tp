@@ -85,7 +85,7 @@ node::Sv2NewTemplateMsg::Sv2NewTemplateMsg(const CBlockHeader& header, const CTr
 node::Sv2SetNewPrevHashMsg::Sv2SetNewPrevHashMsg(const CBlockHeader& header, uint64_t template_id) : m_template_id{template_id}
 {
     m_prev_hash = header.hashPrevBlock;
-    m_header_timestamp = header.nTime;
+    m_ntime_start = header.nTime;
     m_nBits = header.nBits;
     m_target = ArithToUint256(arith_uint256().SetCompact(header.nBits));
 }

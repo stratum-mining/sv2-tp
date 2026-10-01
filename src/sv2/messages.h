@@ -380,10 +380,10 @@ struct Sv2SetNewPrevHashMsg
     uint256 m_prev_hash;
 
     /**
-     * The nTime field in the block header at which the client should start (usually current time).
-     * This is NOT the minimum valid nTime value.
+     * The nTime field in the block header at which hashing starts, usually the current time
+     * when this message was produced. This is not the consensus minimum.
      */
-    uint32_t m_header_timestamp;
+    uint32_t m_ntime_start;
 
     /**
      * Block header field.
@@ -405,7 +405,7 @@ struct Sv2SetNewPrevHashMsg
     {
         s << m_template_id
           << m_prev_hash
-          << m_header_timestamp
+          << m_ntime_start
           << m_nBits
           << m_target;
     }
@@ -559,7 +559,7 @@ struct Sv2SubmitSolutionMsg
 
     /**
      * The nTime field in the block header. This MUST be greater than or equal to
-     * the header_timestamp field in the latest SetNewPrevHash message and lower
+     * the ntime_start field in the latest SetNewPrevHash message and lower
      * than or equal to that value plus the number of seconds since the receipt
      * of that message.
      */

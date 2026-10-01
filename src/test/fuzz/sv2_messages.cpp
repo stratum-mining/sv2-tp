@@ -301,13 +301,13 @@ FUZZ_TARGET(sv2_set_new_prev_hash, .init = Sv2FuzzInitialize)
     // Roundtrip: read back serialized fields and verify
     uint64_t rt_template_id;
     uint256 rt_prev_hash;
-    uint32_t rt_timestamp;
+    uint32_t rt_ntime_start;
     uint32_t rt_nbits;
     uint256 rt_target;
-    ss >> rt_template_id >> rt_prev_hash >> rt_timestamp >> rt_nbits >> rt_target;
+    ss >> rt_template_id >> rt_prev_hash >> rt_ntime_start >> rt_nbits >> rt_target;
     assert(rt_template_id == template_id);
     assert(rt_prev_hash == header.hashPrevBlock);
-    assert(rt_timestamp == header.nTime);
+    assert(rt_ntime_start == header.nTime);
     assert(rt_nbits == header.nBits);
     assert(rt_target == msg.m_target);
 }

@@ -198,7 +198,13 @@ std::unique_ptr<interfaces::BlockTemplate> MockMining::createNewBlock(const node
     uint64_t seq = ++state->chain.template_seq;
     return std::make_unique<MockBlockTemplate>(state, state->chain.prev_hash, state->txs, seq, state->chain.pending_fee_sum);
 }
-void MockMining::interrupt() { LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "mock interrupt()"); }
+void MockMining::interrupt()
+{
+    LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "mock interrupt()");
+    LOCK(state->m);
+    state->shutdown = true;
+    state->cv.notify_all();
+}
 bool MockMining::checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) { return true; }
 bool MockMining::submitBlock(const CBlock&, std::string&, std::string&) { return true; }
 std::vector<CTransactionRef> MockMining::getTransactionsByTxID(const std::vector<Txid>&) { return {}; }

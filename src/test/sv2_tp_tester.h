@@ -5,6 +5,7 @@
 #ifndef BITCOIN_TEST_SV2_TP_TESTER_H
 #define BITCOIN_TEST_SV2_TP_TESTER_H
 
+#include <primitives/transaction.h>
 #include <sv2/messages.h>
 #include <sv2/template_provider.h>
 #include <test/sv2_mock_mining.h>
@@ -75,6 +76,8 @@ public:
     void SendSetupConnection(size_t peer_id = 0);
     /** Send CoinbaseOutputConstraints message. */
     void SendCoinbaseOutputConstraints(size_t peer_id = 0, uint32_t max_additional_size = 1);
+    /** Send SubmitSolution for template_id with the given coinbase. */
+    void SendSubmitSolutionCoinbase(uint64_t template_id, const CMutableTransaction& coinbase, size_t peer_id = 0);
     /** Receive a NewTemplate + SetNewPrevHash pair and verify sizes and matching IDs. Returns the template ID. */
     uint64_t ReceiveTemplatePair(size_t peer_id = 0);
 

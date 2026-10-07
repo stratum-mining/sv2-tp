@@ -79,8 +79,8 @@ public:
     Sv2NetMsg SetupConnectionMsg();
     size_t GetBlockTemplateCount();
 
-    /** Send SetupConnection and verify Success reply. */
-    void SendSetupConnection(size_t peer_id = 0);
+    /** Send SetupConnection with flags and verify that Success echoes them. */
+    void SendSetupConnection(size_t peer_id = 0, uint32_t flags = 0);
     /** Send CoinbaseOutputConstraints message. */
     void SendCoinbaseOutputConstraints(size_t peer_id = 0, uint32_t max_additional_size = 1);
     /** Send SubmitSolution for template_id with the given coinbase. */

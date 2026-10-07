@@ -92,6 +92,40 @@ Finally, if we find an actual block, the client sends us `SubmitSolution`.
 We then lookup the template (may not be the most recent one), reconstruct
 the block and broadcast it. The pool will do the same.
 
+A Job Declarator server can instead connect with the `REQUIRES_JOB_VALIDATION`
+flag set in `SetupConnection`, which we only accept when the node is Bitcoin
+Core v32 or later. Such a client may skip `CoinbaseOutputConstraints`, in
+which case it receives no templates, and sends `ProposeTemplate` with the
+custom job a miner declared to it: the coinbase prefix and suffix and the
+wtxid of every other transaction.
+
+If the node lacks some of those transactions we reply `ProvideMissingTransactions`
+with their positions and keep the request pending, for up to 30 seconds and
+at most 8 per client. The client answers `ProvideMissingTransactions.Success`
+with exactly those transactions, after which validation resumes. Reusing a
+pending `request_id` in a new `ProposeTemplate` is answered with
+`duplicate-request-id`, and transactions for a request we do not (or no
+longer) hold with `unknown-request-id`.
+
+Otherwise we reply `ProposeTemplate.Error` with the node's rejection reason or
+one of our own (`bad-cb-decode`, `duplicate-wtxid`, `bad-missing-tx`,
+`job-validation-unavailable`), or `ProposeTemplate.Success` with a
+`template_id` that a later `SubmitSolution` can refer to, the tip the block was
+validated on, and the block's fee total. Only the validating node can compute
+the fee total, but Bitcoin Core's mining interface does not expose it for a
+checked block yet, so we send 0 (unknown) until it does. While the node is in
+initial block download every proposal gets `job-validation-unavailable`.
+
+The node calls that validation takes run on a separate thread, one proposal at
+a time, so that they don't hold up `SubmitSolution` and other messages. Each
+client may have 4 proposals waiting for or undergoing validation; further
+ones get `job-validation-unavailable`. A validated template is kept next to
+our own templates and pruned with them after the next block. The spec does
+not cap the number of templates a client may have validated yet.
+
+See https://github.com/stratum-mining/sv2-spec/discussions/239 and
+https://github.com/bitcoin/bitcoin/pull/35671.
+
 `[0]`: When the Job Declarator client communicates with the Job Declarator
 server there is an intermediate message which sends short transaction ids
 first, followed by a `ProvideMissingTransactions` message. The spec could be

@@ -27,9 +27,9 @@ extern std::function<void(const std::string&)> G_TEST_LOG_FUN;
 #include <unistd.h>
 
 namespace {
-//! Simulates a node without getTransactionsByTxID(), by throwing the same
-//! exception the IPC layer raises for a method the other side does not
-//! implement.
+//! Simulates a node without submitBlock() and the getTransactionsBy*()
+//! lookups, by throwing the same exception the IPC layer raises for a method
+//! the other side does not implement.
 //!
 //! The mock server can't do this, because it implements every method of the
 //! current interface. Having it throw instead would not be the same thing: a
@@ -56,11 +56,15 @@ public:
     {
         return m_mining->checkBlock(block, options, reason, debug);
     }
-    bool submitBlock(const CBlock& block, std::string& reason, std::string& debug) override
+    bool submitBlock(const CBlock&, std::string&, std::string&) override
     {
-        return m_mining->submitBlock(block, reason, debug);
+        throw ipc::Exception("kj::Exception: remote exception: Method not implemented.");
     }
     std::vector<CTransactionRef> getTransactionsByTxID(const std::vector<Txid>&) override
+    {
+        throw ipc::Exception("kj::Exception: remote exception: Method not implemented.");
+    }
+    std::vector<CTransactionRef> getTransactionsByWitnessID(const std::vector<Wtxid>&) override
     {
         throw ipc::Exception("kj::Exception: remote exception: Method not implemented.");
     }

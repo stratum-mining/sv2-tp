@@ -50,6 +50,10 @@ struct MockState {
     //! throw because the mock node does not have the method.
     std::atomic<int> submit_solution_calls{0};
     std::atomic<int> submit_solution_old7_calls{0};
+    //! Number of calls to submitBlock(), which rejects when reject_solution is set.
+    std::atomic<int> submit_block_calls{0};
+    //! When non-empty, checkBlock() fails with this BIP22 reason.
+    std::string check_block_reason GUARDED_BY(m);
     //! When non-zero, createNewBlock() throws if block_reserved_weight exceeds
     //! it, like Bitcoin Core v32 does for a node's -blockmaxweight.
     uint64_t max_reserved_weight GUARDED_BY(m){0};
@@ -111,6 +115,8 @@ public:
     bool checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) override;
     bool submitBlock(const CBlock&, std::string&, std::string&) override;
     std::vector<CTransactionRef> getTransactionsByTxID(const std::vector<Txid>&) override;
+    //! Looks up txs, the transactions the mock node has in its mempool.
+    std::vector<CTransactionRef> getTransactionsByWitnessID(const std::vector<Wtxid>&) override;
 
     // Accessors for tests (thread-safe)
     uint64_t GetTemplateSeq();

@@ -6,7 +6,7 @@
 #include <util/sock.h>
 #include <util/time.h>
 
-ConnTester::ConnTester()
+ConnTester::ConnTester(uint32_t supported_flags)
 {
     CreateSock = [this](int, int, int) -> std::unique_ptr<Sock> {
         // This will be the bind/listen socket from m_connman. It will
@@ -27,7 +27,7 @@ ConnTester::ConnTester()
 
     m_connman = std::make_unique<Sv2Connman>(static_key, m_connman_authority_pubkey, certificate);
 
-    BOOST_REQUIRE(m_connman->Start(this, "127.0.0.1", 18447));
+    BOOST_REQUIRE(m_connman->Start(this, "127.0.0.1", 18447, supported_flags));
 }
 
 ConnTester::~ConnTester()
@@ -164,4 +164,16 @@ void ConnTester::SubmitSolution(node::Sv2SubmitSolutionMsg solution)
 {
     BOOST_TEST_MESSAGE("Process SubmitSolution");
     ++m_submit_solution_count;
+}
+
+void ConnTester::ProposeTemplate(Sv2Client& client, node::Sv2ProposeTemplateMsg msg)
+{
+    BOOST_TEST_MESSAGE("Process ProposeTemplate");
+    ++m_propose_template_count;
+}
+
+void ConnTester::ProvideMissingTransactions(Sv2Client& client, node::Sv2ProvideMissingTransactionsSuccessMsg msg)
+{
+    BOOST_TEST_MESSAGE("Process ProvideMissingTransactions.Success");
+    ++m_provide_missing_transactions_count;
 }

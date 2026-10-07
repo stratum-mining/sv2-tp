@@ -663,6 +663,22 @@ void Sv2TemplateProvider::SubmitSolution(node::Sv2SubmitSolutionMsg solution)
         SaveBlockAsync(block_template, submitted);
 }
 
+void Sv2TemplateProvider::ProposeTemplate(Sv2Client& client, node::Sv2ProposeTemplateMsg msg)
+{
+    // Not reachable: Start() does not advertise REQUIRES_JOB_VALIDATION yet.
+    node::Sv2ProposeTemplateErrorMsg error{msg.m_request_id, "job-validation-unavailable", ""};
+    LOCK(client.cs_send);
+    client.m_send_messages.emplace_back(error);
+}
+
+void Sv2TemplateProvider::ProvideMissingTransactions(Sv2Client& client, node::Sv2ProvideMissingTransactionsSuccessMsg msg)
+{
+    // Not reachable: Start() does not advertise REQUIRES_JOB_VALIDATION yet.
+    node::Sv2ProposeTemplateErrorMsg error{msg.m_request_id, "unknown-request-id", ""};
+    LOCK(client.cs_send);
+    client.m_send_messages.emplace_back(error);
+}
+
 void Sv2TemplateProvider::SaveBlockAsync(std::shared_ptr<BlockTemplate> block_template, bool submitted)
 {
     // Briefly wait (so we can focus on the next template) and then fetch and

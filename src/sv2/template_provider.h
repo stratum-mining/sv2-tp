@@ -194,6 +194,10 @@ public:
 
     void SubmitSolution(node::Sv2SubmitSolutionMsg solution) EXCLUSIVE_LOCKS_REQUIRED(!m_tp_mutex) override;
 
+    void ProposeTemplate(Sv2Client& client, node::Sv2ProposeTemplateMsg msg) EXCLUSIVE_LOCKS_REQUIRED(!m_tp_mutex) override;
+
+    void ProvideMissingTransactions(Sv2Client& client, node::Sv2ProvideMissingTransactionsSuccessMsg msg) EXCLUSIVE_LOCKS_REQUIRED(!m_tp_mutex) override;
+
     /* Block templates that connected clients may be working on */
     BlockTemplateCache& GetBlockTemplates() EXCLUSIVE_LOCKS_REQUIRED(m_tp_mutex) { return m_block_template_cache; }
 

@@ -49,6 +49,12 @@ struct Sv2Client
     bool m_coinbase_output_constraints_recv GUARDED_BY(cs_status){false};
 
     /**
+     * Whether REQUIRES_JOB_VALIDATION was negotiated in SetupConnection, so
+     * that ProposeTemplate messages are accepted.
+     */
+    bool m_job_validation GUARDED_BY(cs_status){false};
+
+    /**
      * Specific additional coinbase tx output size required for the client.
      */
     unsigned int m_coinbase_tx_outputs_size GUARDED_BY(cs_status){0};
@@ -101,6 +107,21 @@ public:
      */
     virtual void SubmitSolution(node::Sv2SubmitSolutionMsg solution) = 0;
 
+    /**
+     * We received and successfully parsed a ProposeTemplate message on a
+     * connection that negotiated REQUIRES_JOB_VALIDATION. Deal with it and
+     * respond with ProvideMissingTransactions, ProposeTemplate.Success or
+     * ProposeTemplate.Error.
+     */
+    virtual void ProposeTemplate(Sv2Client& client, node::Sv2ProposeTemplateMsg msg) = 0;
+
+    /**
+     * We received and successfully parsed a ProvideMissingTransactions.Success
+     * message on a connection that negotiated REQUIRES_JOB_VALIDATION. Resume
+     * the pending ProposeTemplate request it belongs to.
+     */
+    virtual void ProvideMissingTransactions(Sv2Client& client, node::Sv2ProvideMissingTransactionsSuccessMsg msg) = 0;
+
     virtual ~Sv2EventsInterface() = default;
 };
 
@@ -118,10 +139,10 @@ private:
     const uint16_t m_protocol_version = 2;
 
     /**
-     * Flags accepted from Template Distribution Protocol clients. The protocol
-     * currently does not define any.
+     * Flags accepted from Template Distribution Protocol clients, set by
+     * Start(). Accepted flags are echoed in SetupConnection.Success.
      */
-    const uint32_t m_supported_flags{0};
+    uint32_t m_supported_flags{0};
 
     /**
      * Flags required by this Template Distribution Protocol server. The protocol
@@ -199,9 +220,10 @@ public:
 
     /**
      * Starts the Stratum v2 server and thread.
+     * @param[in] supported_flags SetupConnection flags accepted from clients
      * returns false if port is unable to bind.
      */
-    [[nodiscard]] bool Start(Sv2EventsInterface* msgproc, std::string host, uint16_t port);
+    [[nodiscard]] bool Start(Sv2EventsInterface* msgproc, std::string host, uint16_t port, uint32_t supported_flags = 0);
 
     /**
      * Triggered on interrupt signals to stop the main event loop in ThreadSv2Handler().

@@ -173,7 +173,7 @@ void MockBlockTemplate::interruptWait()
 
 MockMining::MockMining(std::shared_ptr<MockState> st) : state(std::move(st)) {}
 bool MockMining::isTestChain() { return true; }
-bool MockMining::isInitialBlockDownload() { return false; }
+bool MockMining::isInitialBlockDownload() { return state->in_ibd; }
 std::optional<interfaces::BlockRef> MockMining::getTip()
 {
     if (state->fail_get_tip) throw std::runtime_error("mock getTip failure");
@@ -202,15 +202,24 @@ std::unique_ptr<interfaces::BlockTemplate> MockMining::createNewBlock(const node
 void MockMining::interrupt() { LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "mock interrupt()"); }
 bool MockMining::checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string& reason, std::string& debug)
 {
-    LOCK(state->m);
+    WAIT_LOCK(state->m, lock);
+    ++state->check_block_calls;
+    state->cv.notify_all();
+    // Bound the pause so a failing test can't leave fixture teardown waiting forever.
+    if (!state->cv.wait_for(lock, std::chrono::seconds{5}, [&]() EXCLUSIVE_LOCKS_REQUIRED(state->m) {
+            return state->shutdown || !state->pause_check_block;
+        })) {
+        throw std::runtime_error("checkBlock pause timed out");
+    }
     if (state->check_block_reason.empty()) return true;
     reason = state->check_block_reason;
     debug = "mock rejection";
     return false;
 }
-bool MockMining::submitBlock(const CBlock&, std::string& reason, std::string& debug)
+bool MockMining::submitBlock(const CBlock& block, std::string& reason, std::string& debug)
 {
     ++state->submit_block_calls;
+    WITH_LOCK(state->m, state->submitted_block = block);
     if (state->reject_solution) {
         reason = "duplicate";
         debug = "block already known";
@@ -221,6 +230,7 @@ bool MockMining::submitBlock(const CBlock&, std::string& reason, std::string& de
 std::vector<CTransactionRef> MockMining::getTransactionsByTxID(const std::vector<Txid>&) { return {}; }
 std::vector<CTransactionRef> MockMining::getTransactionsByWitnessID(const std::vector<Wtxid>& wtxids)
 {
+    ++state->witness_lookup_calls;
     LOCK(state->m);
     std::vector<CTransactionRef> result;
     for (const Wtxid& wtxid : wtxids) {
@@ -261,6 +271,27 @@ bool MockMining::WaitForCreateCalls(size_t count, std::chrono::milliseconds time
     return state->cv.wait_for(lock, timeout, [&]() EXCLUSIVE_LOCKS_REQUIRED(state->m) {
         return state->shutdown || state->create_weights.size() >= count;
     }) && !state->shutdown && state->create_weights.size() >= count;
+}
+
+void MockMining::PauseCheckBlock(bool pause)
+{
+    LOCK(state->m);
+    state->pause_check_block = pause;
+    state->cv.notify_all();
+}
+
+bool MockMining::WaitForCheckBlockCalls(size_t count, std::chrono::milliseconds timeout)
+{
+    WAIT_LOCK(state->m, lock);
+    return state->cv.wait_for(lock, timeout, [&]() EXCLUSIVE_LOCKS_REQUIRED(state->m) {
+        return state->shutdown || state->check_block_calls >= count;
+    }) && !state->shutdown && state->check_block_calls >= count;
+}
+
+CBlock MockMining::GetSubmittedBlock()
+{
+    LOCK(state->m);
+    return state->submitted_block;
 }
 
 void MockMining::FailWaitNext()

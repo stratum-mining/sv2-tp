@@ -1,5 +1,6 @@
 #include <boost/test/unit_test.hpp>
 #include <consensus/consensus.h>
+#include <consensus/merkle.h>
 #include <interfaces/init.h>
 #include <interfaces/mining.h>
 #include <ipc/exception.h>
@@ -497,6 +498,392 @@ BOOST_AUTO_TEST_CASE(submit_solution_without_template)
     tester.receiveMessage(solution);
     BOOST_REQUIRE(logs.WaitFor("Received SubmitSolution before SetupConnection and CoinbaseOutputConstraints"));
     BOOST_REQUIRE(logs.WaitFor("Template with id=2 is no longer in cache"));
+}
+
+//! A deterministic transaction that differs from MakeDummyTx().
+static CTransactionRef MakeOtherDummyTx()
+{
+    CMutableTransaction mtx{*MakeDummyTx()};
+    mtx.vout[0].nValue = 2 * COIN;
+    return MakeTransactionRef(mtx);
+}
+
+//! Receive ProvideMissingTransactions and return its request id and positions.
+static std::pair<uint32_t, std::vector<uint16_t>> ReceiveProvideMissingTransactions(TPTester& tester, size_t peer_id = 0)
+{
+    Sv2NetMsg msg{node::Sv2MsgType::PROVIDE_MISSING_TRANSACTIONS, {}};
+    tester.PeerReceiveBytes(peer_id, &msg);
+    BOOST_REQUIRE(msg.m_msg_type == node::Sv2MsgType::PROVIDE_MISSING_TRANSACTIONS);
+    DataStream ss{msg.m_msg};
+    uint32_t request_id;
+    uint16_t count;
+    ss >> request_id >> count;
+    std::vector<uint16_t> positions(count);
+    for (uint16_t& position : positions) ss >> position;
+    BOOST_CHECK(ss.empty());
+    return {request_id, positions};
+}
+
+struct ProposeTemplateSuccess {
+    uint32_t request_id;
+    uint64_t template_id;
+    uint256 prev_hash;
+    uint64_t fees;
+};
+
+//! Receive ProposeTemplate.Success.
+static ProposeTemplateSuccess ReceiveProposeTemplateSuccess(TPTester& tester, size_t peer_id = 0)
+{
+    Sv2NetMsg msg{node::Sv2MsgType::PROPOSE_TEMPLATE_SUCCESS, {}};
+    // request_id, template_id, prev_hash, fees
+    BOOST_REQUIRE_EQUAL(tester.PeerReceiveBytes(peer_id, &msg), SV2_HEADER_ENCRYPTED_SIZE + 4 + 8 + 32 + 8 + Poly1305::TAGLEN);
+    BOOST_REQUIRE(msg.m_msg_type == node::Sv2MsgType::PROPOSE_TEMPLATE_SUCCESS);
+    DataStream ss{msg.m_msg};
+    ProposeTemplateSuccess success;
+    ss >> success.request_id >> success.template_id >> success.prev_hash >> success.fees;
+    BOOST_CHECK(ss.empty());
+    return success;
+}
+
+//! Receive ProposeTemplate.Error, check its request id and code and return the details.
+static std::string ExpectProposeTemplateError(TPTester& tester, uint32_t request_id, const std::string& code, size_t peer_id = 0)
+{
+    Sv2NetMsg msg{node::Sv2MsgType::PROPOSE_TEMPLATE_ERROR, {}};
+    tester.PeerReceiveBytes(peer_id, &msg);
+    BOOST_REQUIRE(msg.m_msg_type == node::Sv2MsgType::PROPOSE_TEMPLATE_ERROR);
+    DataStream ss{msg.m_msg};
+    uint32_t received_request_id;
+    std::string received_code;
+    ss >> received_request_id >> received_code;
+    BOOST_CHECK_EQUAL(received_request_id, request_id);
+    BOOST_CHECK_EQUAL(received_code, code);
+    const std::vector<uint8_t> details{node::ReadB0_64K(ss)};
+    BOOST_CHECK(ss.empty());
+    return std::string{details.begin(), details.end()};
+}
+
+//! Send ProposeTemplate for TestProposeTemplateCoinbase() and the given wtxids.
+static void SendProposeTemplate(TPTester& tester, uint32_t request_id, const std::vector<Wtxid>& wtxids, size_t peer_id = 0)
+{
+    node::Sv2NetMsg msg{TestProposeTemplateMsg(request_id, wtxids)};
+    tester.receiveMessage(msg, peer_id);
+}
+
+//! Send ProvideMissingTransactions.Success with the given transactions.
+static void SendProvideMissingTransactions(TPTester& tester, uint32_t request_id, const std::vector<CTransactionRef>& txs, size_t peer_id = 0)
+{
+    node::Sv2NetMsg msg{TestProvideMissingTransactionsMsg(request_id, txs)};
+    tester.receiveMessage(msg, peer_id);
+}
+
+// A Job Declarator Server validates a custom job through ProposeTemplate,
+// supplies the transactions the node lacks, and later submits a solution by
+// template id.
+BOOST_AUTO_TEST_CASE(propose_template)
+{
+    TPTester tester{};
+    tester.handshake();
+    tester.SendSetupConnection(/*peer_id=*/0, node::REQUIRES_JOB_VALIDATION);
+
+    // The node has one of the two declared transactions in its mempool.
+    const CTransactionRef known{MakeDummyTx()};
+    const CTransactionRef unknown{MakeOtherDummyTx()};
+    WITH_LOCK(tester.m_state->m, tester.m_state->txs = {known});
+    const std::vector<Wtxid> wtxids{known->GetWitnessHash(), unknown->GetWitnessHash()};
+
+    BOOST_TEST_MESSAGE("The transaction the node lacks is requested by position");
+    SendProposeTemplate(tester, /*request_id=*/7, wtxids);
+    {
+        const auto [request_id, positions]{ReceiveProvideMissingTransactions(tester)};
+        BOOST_CHECK_EQUAL(request_id, 7);
+        BOOST_REQUIRE_EQUAL(positions.size(), 1);
+        BOOST_CHECK_EQUAL(positions[0], 1);
+    }
+    BOOST_CHECK_EQUAL(tester.GetBlockTemplateCount(), 0);
+
+    BOOST_TEST_MESSAGE("A pending request id can't be reused");
+    SendProposeTemplate(tester, /*request_id=*/7, wtxids);
+    ExpectProposeTemplateError(tester, 7, "duplicate-request-id");
+
+    BOOST_TEST_MESSAGE("Transactions for a request we don't know are refused");
+    SendProvideMissingTransactions(tester, /*request_id=*/8, {unknown});
+    ExpectProposeTemplateError(tester, 8, "unknown-request-id");
+
+    BOOST_TEST_MESSAGE("Each supplied transaction must be at a requested position");
+    SendProvideMissingTransactions(tester, /*request_id=*/7, {known});
+    BOOST_CHECK_EQUAL(ExpectProposeTemplateError(tester, 7, "bad-missing-tx"), "transaction was not requested");
+    // The error ended the request, so the id is free again.
+    SendProposeTemplate(tester, /*request_id=*/7, wtxids);
+    ReceiveProvideMissingTransactions(tester);
+    const CTransactionRef stranger{[] {
+        CMutableTransaction mtx{*MakeDummyTx()};
+        mtx.vout[0].nValue = 3 * COIN;
+        return MakeTransactionRef(mtx);
+    }()};
+    SendProvideMissingTransactions(tester, /*request_id=*/7, {stranger});
+    BOOST_CHECK_EQUAL(ExpectProposeTemplateError(tester, 7, "bad-missing-tx"), "transaction was not requested");
+    SendProposeTemplate(tester, /*request_id=*/7, wtxids);
+    ReceiveProvideMissingTransactions(tester);
+    SendProvideMissingTransactions(tester, /*request_id=*/7, {});
+    BOOST_CHECK_EQUAL(ExpectProposeTemplateError(tester, 7, "bad-missing-tx"), "1 requested transactions not provided");
+    BOOST_CHECK_EQUAL(tester.m_mining_control->GetCreateWeights().size(), 0);
+
+    BOOST_TEST_MESSAGE("With the transaction supplied the block is checked and tracked");
+    SendProposeTemplate(tester, /*request_id=*/7, wtxids);
+    ReceiveProvideMissingTransactions(tester);
+    SendProvideMissingTransactions(tester, /*request_id=*/7, {unknown});
+    const ProposeTemplateSuccess success{ReceiveProposeTemplateSuccess(tester)};
+    BOOST_CHECK_EQUAL(success.request_id, 7);
+    BOOST_CHECK_EQUAL(success.template_id, 1);
+    BOOST_CHECK(success.prev_hash == uint256{}); // the mock chain's tip
+    BOOST_CHECK_EQUAL(success.fees, 0); // unknown until the mining interface exposes it
+    BOOST_REQUIRE_EQUAL(tester.GetBlockTemplateCount(), 1);
+    {
+        LOCK(tester.m_tp->m_tp_mutex);
+        const CBlock block{tester.m_tp->GetBlockTemplates().at(success.template_id).second->getBlock()};
+        BOOST_REQUIRE_EQUAL(block.vtx.size(), 3);
+        BOOST_CHECK(block.vtx[1]->GetWitnessHash() == known->GetWitnessHash());
+        BOOST_CHECK(block.vtx[2]->GetWitnessHash() == unknown->GetWitnessHash());
+    }
+
+    BOOST_TEST_MESSAGE("Its transactions can be requested like for any template");
+    {
+        DataStream ss{};
+        ss << success.template_id;
+        std::vector<uint8_t> template_id_bytes(8);
+        ss >> MakeWritableByteSpan(template_id_bytes);
+        node::Sv2NetMsg request{node::Sv2MsgType::REQUEST_TRANSACTION_DATA, std::move(template_id_bytes)};
+        tester.receiveMessage(request);
+        Sv2NetMsg reply{node::Sv2MsgType::REQUEST_TRANSACTION_DATA_SUCCESS, {}};
+        tester.PeerReceiveBytes(0, &reply);
+        BOOST_REQUIRE(reply.m_msg_type == node::Sv2MsgType::REQUEST_TRANSACTION_DATA_SUCCESS);
+        DataStream reply_stream{reply.m_msg};
+        uint64_t template_id;
+        reply_stream >> template_id;
+        BOOST_CHECK_EQUAL(template_id, success.template_id);
+        // The witness reserved value is the coinbase witness, 32 zero bytes.
+        BOOST_CHECK_EQUAL(node::ReadB0_64K(reply_stream).size(), 32);
+        uint16_t tx_count;
+        reply_stream >> tx_count;
+        BOOST_CHECK_EQUAL(tx_count, 2);
+    }
+
+    BOOST_TEST_MESSAGE("Its solution is submitted as a complete block with the miner's extranonce");
+    CMutableTransaction solved_coinbase{TestProposeTemplateCoinbase()};
+    solved_coinbase.vin[0].scriptSig = CScript() << 17 << std::vector<unsigned char>(8, 0x42);
+    node::Sv2SubmitSolutionMsg solution;
+    solution.m_template_id = success.template_id;
+    solution.m_version = 0x20000000;
+    solution.m_ntime = 1;
+    solution.m_nonce = 2;
+    solution.m_coinbase_tx = solved_coinbase;
+    tester.m_tp->SubmitSolution(solution);
+    BOOST_CHECK_EQUAL(tester.m_state->submit_block_calls.load(), 1);
+    BOOST_CHECK_EQUAL(tester.m_state->submit_solution_calls.load(), 0);
+    const CBlock submitted{tester.m_mining_control->GetSubmittedBlock()};
+    BOOST_REQUIRE_EQUAL(submitted.vtx.size(), 3);
+    BOOST_CHECK(submitted.vtx[0]->GetWitnessHash() == CTransaction{solved_coinbase}.GetWitnessHash());
+    BOOST_CHECK(submitted.hashMerkleRoot == BlockMerkleRoot(submitted));
+    BOOST_CHECK_EQUAL(submitted.nNonce, 2);
+
+    BOOST_TEST_MESSAGE("The node's rejection reason is relayed");
+    {
+        LOCK(tester.m_state->m);
+        tester.m_state->txs = {known, unknown};
+        tester.m_state->check_block_reason = "bad-cb-amount";
+    }
+    SendProposeTemplate(tester, /*request_id=*/9, wtxids);
+    BOOST_CHECK_EQUAL(ExpectProposeTemplateError(tester, 9, "bad-cb-amount"), "mock rejection");
+    BOOST_CHECK_EQUAL(tester.GetBlockTemplateCount(), 1);
+
+    // Let the sv2-saveblk thread finish.
+    UninterruptibleSleep(std::chrono::milliseconds{1000});
+    tester.m_mining_control->Shutdown();
+}
+
+// Checks that need no node call are answered right away, and nothing is
+// looked up during initial block download.
+BOOST_AUTO_TEST_CASE(propose_template_rejected_before_node_call)
+{
+    TPTester tester{};
+    tester.handshake();
+    tester.SendSetupConnection(/*peer_id=*/0, node::REQUIRES_JOB_VALIDATION);
+
+    const CTransactionRef known{MakeDummyTx()};
+    WITH_LOCK(tester.m_state->m, tester.m_state->txs = {known});
+    const std::vector<Wtxid> wtxids{known->GetWitnessHash()};
+
+    BOOST_TEST_MESSAGE("A transaction can only appear once");
+    SendProposeTemplate(tester, /*request_id=*/1, {known->GetWitnessHash(), known->GetWitnessHash()});
+    ExpectProposeTemplateError(tester, 1, "duplicate-wtxid");
+
+    BOOST_TEST_MESSAGE("The coinbase must decode");
+    node::Sv2NetMsg bad_coinbase{TestProposeTemplateMsg(/*request_id=*/2, wtxids)};
+    // The scriptSig length byte: after request_id, version, the prefix length
+    // and nVersion, marker and flag, input count and prevout.
+    bad_coinbase.m_msg[4 + 4 + 2 + 4 + 2 + 1 + 36] = 101;
+    tester.receiveMessage(bad_coinbase);
+    // libc++ appends the iostream error category to what().
+    BOOST_CHECK(ExpectProposeTemplateError(tester, 2, "bad-cb-decode").starts_with("coinbase scriptSig length out of range"));
+
+    BOOST_TEST_MESSAGE("Nothing is validated during initial block download");
+    tester.m_state->in_ibd = true;
+    SendProposeTemplate(tester, /*request_id=*/3, wtxids);
+    BOOST_CHECK_EQUAL(ExpectProposeTemplateError(tester, 3, "job-validation-unavailable"), "initial block download");
+    BOOST_CHECK_EQUAL(tester.m_state->witness_lookup_calls.load(), 0);
+    BOOST_CHECK_EQUAL(tester.m_mining_control->GetCreateWeights().size(), 0);
+
+    tester.m_state->in_ibd = false;
+    SendProposeTemplate(tester, /*request_id=*/4, wtxids);
+    BOOST_CHECK_EQUAL(ReceiveProposeTemplateSuccess(tester).request_id, 4);
+    BOOST_CHECK_EQUAL(tester.m_state->witness_lookup_calls.load(), 1);
+    tester.m_mining_control->Shutdown();
+}
+
+// A request waiting for transactions is forgotten after a while, or when the
+// client has too many of them.
+BOOST_AUTO_TEST_CASE(propose_template_pending_limits)
+{
+    TPTester tester{};
+    tester.handshake();
+    tester.SendSetupConnection(/*peer_id=*/0, node::REQUIRES_JOB_VALIDATION);
+
+    const CTransactionRef unknown{MakeOtherDummyTx()};
+    const std::vector<Wtxid> wtxids{unknown->GetWitnessHash()};
+
+    BOOST_TEST_MESSAGE("A request expires");
+    SendProposeTemplate(tester, /*request_id=*/1, wtxids);
+    ReceiveProvideMissingTransactions(tester);
+    SetMockTime(GetMockTime() + PENDING_PROPOSAL_TIMEOUT);
+    SendProvideMissingTransactions(tester, /*request_id=*/1, {unknown});
+    ExpectProposeTemplateError(tester, 1, "unknown-request-id");
+
+    BOOST_TEST_MESSAGE("The oldest request makes room for one too many");
+    for (uint32_t request_id{10}; request_id < 10 + MAX_PENDING_PROPOSALS + 1; ++request_id) {
+        SendProposeTemplate(tester, request_id, wtxids);
+        BOOST_CHECK_EQUAL(ReceiveProvideMissingTransactions(tester).first, request_id);
+        // Distinct expiry times, so the oldest is well defined.
+        SetMockTime(GetMockTime() + std::chrono::seconds{1});
+    }
+    SendProvideMissingTransactions(tester, /*request_id=*/10, {unknown});
+    ExpectProposeTemplateError(tester, 10, "unknown-request-id");
+    SendProvideMissingTransactions(tester, /*request_id=*/11, {unknown});
+    BOOST_CHECK_EQUAL(ReceiveProposeTemplateSuccess(tester).request_id, 11);
+    tester.m_mining_control->Shutdown();
+}
+
+// Validation runs off the networking thread, one proposal at a time per
+// template provider, with a bounded number waiting per client.
+BOOST_AUTO_TEST_CASE(propose_template_off_networking_thread)
+{
+    TPTester tester{};
+    tester.handshake();
+    tester.SendSetupConnection(/*peer_id=*/0, node::REQUIRES_JOB_VALIDATION);
+    // The client also receives templates, so there is one to ask about.
+    tester.SendCoinbaseOutputConstraints();
+    const uint64_t template_id{tester.ReceiveTemplatePair()};
+
+    const CTransactionRef known{MakeDummyTx()};
+    WITH_LOCK(tester.m_state->m, tester.m_state->txs = {known});
+    const std::vector<Wtxid> wtxids{known->GetWitnessHash()};
+
+    BOOST_TEST_MESSAGE("Other messages are answered while the node checks a proposal");
+    tester.m_mining_control->PauseCheckBlock(true);
+    SendProposeTemplate(tester, /*request_id=*/1, wtxids);
+    BOOST_REQUIRE(tester.m_mining_control->WaitForCheckBlockCalls(1));
+    {
+        DataStream ss{};
+        ss << template_id;
+        std::vector<uint8_t> template_id_bytes(8);
+        ss >> MakeWritableByteSpan(template_id_bytes);
+        node::Sv2NetMsg request{node::Sv2MsgType::REQUEST_TRANSACTION_DATA, std::move(template_id_bytes)};
+        tester.receiveMessage(request);
+        Sv2NetMsg reply{node::Sv2MsgType::REQUEST_TRANSACTION_DATA_SUCCESS, {}};
+        tester.PeerReceiveBytes(0, &reply);
+        BOOST_CHECK(reply.m_msg_type == node::Sv2MsgType::REQUEST_TRANSACTION_DATA_SUCCESS);
+    }
+
+    BOOST_TEST_MESSAGE("Proposals wait their turn, up to a limit");
+    for (uint32_t request_id{2}; request_id <= MAX_PROPOSALS_IN_FLIGHT; ++request_id) {
+        SendProposeTemplate(tester, request_id, wtxids);
+    }
+    SendProposeTemplate(tester, /*request_id=*/MAX_PROPOSALS_IN_FLIGHT + 1, wtxids);
+    ExpectProposeTemplateError(tester, MAX_PROPOSALS_IN_FLIGHT + 1, "job-validation-unavailable");
+    BOOST_TEST_MESSAGE("A waiting request id can't be reused");
+    SendProposeTemplate(tester, /*request_id=*/2, wtxids);
+    ExpectProposeTemplateError(tester, 2, "duplicate-request-id");
+    BOOST_CHECK_EQUAL(tester.GetBlockTemplateCount(), 1);
+
+    BOOST_TEST_MESSAGE("They are validated in order");
+    tester.m_mining_control->PauseCheckBlock(false);
+    for (uint32_t request_id{1}; request_id <= MAX_PROPOSALS_IN_FLIGHT; ++request_id) {
+        BOOST_CHECK_EQUAL(ReceiveProposeTemplateSuccess(tester).request_id, request_id);
+    }
+    BOOST_CHECK_EQUAL(tester.GetBlockTemplateCount(), 1 + MAX_PROPOSALS_IN_FLIGHT);
+    tester.m_mining_control->Shutdown();
+}
+
+// A validated template lives in the cache like our own and is pruned with
+// them after the next block.
+BOOST_AUTO_TEST_CASE(propose_template_pruned_after_new_tip)
+{
+    TPTester tester{};
+    tester.handshake();
+    tester.SendSetupConnection(/*peer_id=*/0, node::REQUIRES_JOB_VALIDATION);
+
+    const CTransactionRef known{MakeDummyTx()};
+    WITH_LOCK(tester.m_state->m, tester.m_state->txs = {known});
+    const std::vector<Wtxid> wtxids{known->GetWitnessHash()};
+
+    BOOST_TEST_MESSAGE("Without templates, the proposal tells us the node's tip");
+    tester.m_mining_control->TriggerNewTip();
+    SetMockTime(GetMockTime() + std::chrono::seconds{15});
+    SendProposeTemplate(tester, /*request_id=*/1, wtxids);
+    const ProposeTemplateSuccess first{ReceiveProposeTemplateSuccess(tester)};
+    BOOST_CHECK(first.prev_hash != uint256{});
+    // Would be pruned within 100ms if the template provider still thought
+    // the previous tip was the best one.
+    UninterruptibleSleep(std::chrono::milliseconds{300});
+    BOOST_CHECK_EQUAL(tester.GetBlockTemplateCount(), 1);
+
+    BOOST_TEST_MESSAGE("A template for the next block makes it stale");
+    tester.SendCoinbaseOutputConstraints();
+    tester.ReceiveTemplatePair();
+    BOOST_REQUIRE_EQUAL(tester.GetBlockTemplateCount(), 2);
+    tester.m_mining_control->TriggerNewTip();
+    tester.ReceiveTemplatePair();
+    BOOST_REQUIRE_EQUAL(tester.GetBlockTemplateCount(), 3);
+    SetMockTime(GetMockTime() + std::chrono::seconds{15});
+    const auto start{std::chrono::steady_clock::now()};
+    while (tester.GetBlockTemplateCount() > 1 && std::chrono::steady_clock::now() - start < std::chrono::seconds{2}) {
+        UninterruptibleSleep(std::chrono::milliseconds{10});
+    }
+    BOOST_REQUIRE_EQUAL(tester.GetBlockTemplateCount(), 1);
+    BOOST_CHECK(!WITH_LOCK(tester.m_tp->m_tp_mutex, return tester.m_tp->GetBlockTemplates().contains(first.template_id)));
+    tester.m_mining_control->Shutdown();
+}
+
+// Bitcoin Core v31 can neither look up transactions by wtxid nor submit a
+// block we assembled, so the flag is refused there.
+BOOST_AUTO_TEST_CASE(propose_template_unsupported_on_v31)
+{
+    TPTester tester{Sv2TemplateProviderOptions{.is_test = true}, MockNodeVersion::V31};
+    tester.handshake();
+
+    node::Sv2NetMsg setup{tester.SetupConnectionMsg()};
+    setup.m_msg[5] = node::REQUIRES_JOB_VALIDATION;
+    tester.receiveMessage(setup);
+    Sv2NetMsg response{node::Sv2MsgType::SETUP_CONNECTION_ERROR, {}};
+    // flags, STR0_255 "unsupported-feature-flags"
+    BOOST_REQUIRE_EQUAL(tester.PeerReceiveBytes(0, &response), SV2_HEADER_ENCRYPTED_SIZE + 4 + 1 + 25 + Poly1305::TAGLEN);
+    BOOST_REQUIRE(response.m_msg_type == node::Sv2MsgType::SETUP_CONNECTION_ERROR);
+    DataStream ss{response.m_msg};
+    uint32_t flags;
+    std::string error_code;
+    ss >> flags >> error_code;
+    BOOST_CHECK_EQUAL(flags, node::REQUIRES_JOB_VALIDATION);
+    BOOST_CHECK_EQUAL(error_code, "unsupported-feature-flags");
+    tester.m_mining_control->Shutdown();
 }
 
 //! Wait until the template provider has flagged every client for disconnection.

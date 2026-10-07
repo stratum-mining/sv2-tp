@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <interfaces/mining.h>
+#include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <sync.h>
@@ -50,8 +51,18 @@ struct MockState {
     //! throw because the mock node does not have the method.
     std::atomic<int> submit_solution_calls{0};
     std::atomic<int> submit_solution_old7_calls{0};
+    //! Make isInitialBlockDownload() return true.
+    std::atomic<bool> in_ibd{false};
     //! Number of calls to submitBlock(), which rejects when reject_solution is set.
     std::atomic<int> submit_block_calls{0};
+    //! The block of the last submitBlock() call.
+    CBlock submitted_block GUARDED_BY(m);
+    //! Number of calls to getTransactionsByWitnessID().
+    std::atomic<int> witness_lookup_calls{0};
+    //! Number of calls to checkBlock(), including paused ones.
+    size_t check_block_calls GUARDED_BY(m){0};
+    //! Pause checkBlock() after counting the call, until resumed or shut down.
+    bool pause_check_block GUARDED_BY(m){false};
     //! When non-empty, checkBlock() fails with this BIP22 reason.
     std::string check_block_reason GUARDED_BY(m);
     //! When non-zero, createNewBlock() throws if block_reserved_weight exceeds
@@ -126,6 +137,12 @@ public:
     void PauseCreate(bool pause);
     //! Wait for direct createNewBlock() calls, including paused or rejected calls.
     bool WaitForCreateCalls(size_t count, std::chrono::milliseconds timeout = std::chrono::milliseconds{2000});
+    //! Pause or resume checkBlock() after it counts the call.
+    void PauseCheckBlock(bool pause);
+    //! Wait for checkBlock() calls, including paused ones.
+    bool WaitForCheckBlockCalls(size_t count, std::chrono::milliseconds timeout = std::chrono::milliseconds{2000});
+    //! The block of the last submitBlock() call.
+    CBlock GetSubmittedBlock();
     //! Make every current and future waitNext() call throw.
     void FailWaitNext();
 

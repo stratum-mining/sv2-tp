@@ -575,9 +575,13 @@ void Sv2TemplateProvider::RequestTransactionData(Sv2Client& client, node::Sv2Req
     }
 
     std::vector<uint8_t> witness_reserve_value;
-    auto scriptWitness = block.vtx[0]->vin[0].scriptWitness;
-    if (!scriptWitness.IsNull()) {
-        std::copy(scriptWitness.stack[0].begin(), scriptWitness.stack[0].end(), std::back_inserter(witness_reserve_value));
+    // After a SubmitSolution the block has the client's coinbase, which may
+    // have no inputs. Don't assume the usual shape.
+    if (!block.vtx.empty() && !block.vtx[0]->vin.empty()) {
+        const CScriptWitness& script_witness{block.vtx[0]->vin[0].scriptWitness};
+        if (!script_witness.IsNull()) {
+            std::copy(script_witness.stack[0].begin(), script_witness.stack[0].end(), std::back_inserter(witness_reserve_value));
+        }
     }
     std::vector<CTransactionRef> txs;
     if (block.vtx.size() > 0) {

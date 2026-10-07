@@ -75,6 +75,19 @@ private:
 /** A valid SubmitSolution message for template id 2. */
 node::Sv2NetMsg TestSubmitSolutionMsg();
 
+/**
+ * Coinbase that TestProposeTemplateMsg() splits into prefix and suffix: a
+ * segwit coinbase whose scriptSig is a BIP34 height push followed by an all
+ * zero 8 byte extranonce.
+ */
+CMutableTransaction TestProposeTemplateCoinbase();
+
+/** A ProposeTemplate message for TestProposeTemplateCoinbase() and the given wtxids. */
+node::Sv2NetMsg TestProposeTemplateMsg(uint32_t request_id, const std::vector<Wtxid>& wtxids);
+
+/** A ProvideMissingTransactions.Success message with the given transactions. */
+node::Sv2NetMsg TestProvideMissingTransactionsMsg(uint32_t request_id, const std::vector<CTransactionRef>& transaction_list);
+
 /** Collects log lines while in scope. */
 class Sv2LogCapture
 {

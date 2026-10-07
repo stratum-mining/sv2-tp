@@ -169,15 +169,18 @@ public:
     virtual bool checkBlock(const CBlock& block, const node::BlockCheckOptions& options, std::string& reason, std::string& debug) = 0;
 
     /**
-     * Process a fully assembled block.
-     *
-     * Not used by sv2-tp, but needed to keep the capnp ordinals in sync with
-     * Bitcoin Core, see mining.capnp.
+     * Process a fully assembled block. Used to broadcast the solution for a
+     * template that a client proposed, see Sv2TemplateProvider::ProposeTemplate().
      *
      * @param[in]  block  the complete block to submit
      * @param[out] reason failure reason (BIP22)
      * @param[out] debug  more detailed rejection reason
      * @returns           true if the block was accepted as a new block
+     *
+     * @note Unlike the submitblock RPC, this method does not add a missing
+     *       coinbase witness reserved value. The block must be complete.
+     * @note Bitcoin Core v31 does not have this method and throws when it is
+     *       called, see Sv2TemplateProvider::DetectNodeVersion().
      */
     virtual bool submitBlock(const CBlock& block, std::string& reason, std::string& debug) = 0;
 
@@ -192,6 +195,17 @@ public:
      *                    transaction if found, otherwise nullptr
      */
     virtual std::vector<CTransactionRef> getTransactionsByTxID(const std::vector<Txid>& txids) = 0;
+
+    /**
+     * Fetch raw transactions from the mempool by wtxid.
+     *
+     * @param[in] wtxids  witness transaction ids to look up
+     * @returns           one entry per requested wtxid containing the
+     *                    transaction if found, otherwise nullptr
+     *
+     * @note Bitcoin Core v31 does not have this method, see submitBlock().
+     */
+    virtual std::vector<CTransactionRef> getTransactionsByWitnessID(const std::vector<Wtxid>& wtxids) = 0;
 
     //! Get internal node context. Useful for RPC and testing,
     //! but not accessible across processes.

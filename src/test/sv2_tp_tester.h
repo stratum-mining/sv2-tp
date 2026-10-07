@@ -31,9 +31,10 @@ struct MockInit;
 //! it does not have throw, like they do when the IPC layer finds that the
 //! other side does not implement them.
 enum class MockNodeVersion : uint8_t {
-    //! Has getTransactionsByTxID() and submitSolution() with reason and debug.
+    //! Has submitBlock(), the getTransactionsBy*() lookups and
+    //! submitSolution() with reason and debug.
     CURRENT,
-    //! Bitcoin Core v31: has neither.
+    //! Bitcoin Core v31: has none of these.
     V31,
 };
 

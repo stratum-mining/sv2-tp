@@ -10,6 +10,7 @@
 #include <sv2/messages.h>
 #include <tinyformat.h>
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace {
@@ -208,9 +209,35 @@ void MockMining::interrupt()
     state->mining_interrupted = true;
     state->cv.notify_all();
 }
-bool MockMining::checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) { return true; }
-bool MockMining::submitBlock(const CBlock&, std::string&, std::string&) { return true; }
+bool MockMining::checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string& reason, std::string& debug)
+{
+    LOCK(state->m);
+    if (state->check_block_reason.empty()) return true;
+    reason = state->check_block_reason;
+    debug = "mock rejection";
+    return false;
+}
+bool MockMining::submitBlock(const CBlock&, std::string& reason, std::string& debug)
+{
+    ++state->submit_block_calls;
+    if (state->reject_solution) {
+        reason = "duplicate";
+        debug = "block already known";
+        return false;
+    }
+    return true;
+}
 std::vector<CTransactionRef> MockMining::getTransactionsByTxID(const std::vector<Txid>&) { return {}; }
+std::vector<CTransactionRef> MockMining::getTransactionsByWitnessID(const std::vector<Wtxid>& wtxids)
+{
+    LOCK(state->m);
+    std::vector<CTransactionRef> result;
+    for (const Wtxid& wtxid : wtxids) {
+        const auto it{std::find_if(state->txs.begin(), state->txs.end(), [&wtxid](const CTransactionRef& tx) { return tx->GetWitnessHash() == wtxid; })};
+        result.push_back(it == state->txs.end() ? nullptr : *it);
+    }
+    return result;
+}
 
 uint64_t MockMining::GetTemplateSeq()
 {

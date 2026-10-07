@@ -1,0 +1,147 @@
+# Copyright (c) 2026-present The Bitcoin Core developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or https://opensource.org/license/mit.
+
+name: SRI integration test (Windows)
+
+on:
+  workflow_call:
+    inputs:
+      windows-compiler:
+        description: 'MSVC for a native Windows build, MinGW for cross-built binaries'
+        type: string
+        required: true
+      windows-artifact:
+        description: 'Executable artifact from the cross-build job, required when windows-compiler is MinGW'
+        type: string
+        default: ''
+
+jobs:
+  sri-integration-test-windows:
+    name: 'SRI integration test (Windows ${{ inputs.windows-compiler }}, Bitcoin Core #32387, ${{ matrix.scenario }})'
+    # Bitcoin Core requires VS 2026 for its consteval constructor usage.
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows IPC support is not available in a Bitcoin Core release yet.
+        scenario: [mining, backend-disconnect]
+    env:
+      RUNTIME_ROOT: ${{ github.workspace }}/sri-integration-test/${{ matrix.scenario }}
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      SV2_TP: ${{ inputs.windows-compiler == 'MSVC' && 'build/bin/Debug/sv2-tp.exe' || 'build/bin/sv2-tp.exe' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download cross-built sv2-tp
+        if: inputs.windows-compiler == 'MinGW'
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.windows-artifact }}
+          path: build
+
+      - name: Checkout Bitcoin Core
+        uses: actions/checkout@v7
+        with:
+          # TODO: Use bitcoin/bitcoin master once bitcoin/bitcoin#32387 is merged.
+          repository: ryanofsky/bitcoin
+          ref: pr/ipc-win
+          path: sri-integration-test/bitcoin-core-source
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v5
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: windows-sri-vcpkg-${{ inputs.windows-compiler }}-${{ hashFiles('vcpkg.json', 'sri-integration-test/bitcoin-core-source/vcpkg.json') }}
+
+      # Ninja supports compiler launchers; embedded debug info makes MSVC output cacheable.
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set sccache directory
+        run: '"SCCACHE_DIR=$env:RUNNER_TEMP/sccache_dir" >> $env:GITHUB_ENV'
+
+      - name: Restore sccache cache
+        id: sccache-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: ${{ github.job }}-sccache-${{ inputs.windows-compiler }}-${{ matrix.scenario }}-${{ github.run_id }}
+          restore-keys: ${{ github.job }}-sccache-${{ inputs.windows-compiler }}-${{ matrix.scenario }}-
+
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Build sv2-tp with MSVC
+        if: inputs.windows-compiler == 'MSVC'
+        shell: bash
+        run: ./ci/test/04_run_windows_ci.sh build-sv2-tp
+
+      - name: Run MSVC unit tests
+        # The MinGW unit suite runs in ci.yml; run the MSVC suite once here.
+        if: inputs.windows-compiler == 'MSVC' && matrix.scenario == 'mining'
+        timeout-minutes: 5
+        shell: bash
+        run: ./ci/test/04_run_windows_ci.sh test-sv2-tp
+
+      - name: Build Bitcoin Core
+        shell: bash
+        run: ./ci/test/04_run_windows_ci.sh build-bitcoin-core
+
+      - name: Checkout sv2-apps
+        if: matrix.scenario == 'mining'
+        uses: actions/checkout@v7
+        with:
+          # TODO: Use stratum-mining/sv2-apps main once sv2-apps#902 is merged.
+          repository: Sjors/sv2-apps
+          ref: 2026/09/windows
+          path: sri-integration-test/sv2-apps
+
+      - name: Install Rust
+        if: matrix.scenario == 'mining'
+        uses: dtolnay/rust-toolchain@1.88.0
+
+      - name: Cache Rust build
+        if: matrix.scenario == 'mining'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sri-integration-test/sv2-apps
+
+      - name: Build sv2-apps
+        if: matrix.scenario == 'mining'
+        shell: bash
+        run: ./ci/test/04_run_windows_ci.sh build-sv2-apps
+
+      - name: Run ${{ matrix.scenario }} test
+        run: |
+          $sriArgs = @()
+          if ("${{ matrix.scenario }}" -eq "mining") {
+            $sriArgs = @("--pool", "sri-integration-test/sv2-apps/target/debug/pool_sv2.exe",
+                         "--miner", "sri-integration-test/sv2-apps/target/debug/mining_device.exe")
+          }
+          python ci/test/stratum_v2_scenario.py "${{ matrix.scenario }}" `
+            --runtime-root "$env:RUNTIME_ROOT" `
+            --bitcoin-node sri-integration-test/bitcoin-core-build/bin/Debug/bitcoin-node.exe `
+            --bitcoin-cli sri-integration-test/bitcoin-core-build/bin/Debug/bitcoin-cli.exe `
+            --sv2-tp "$env:SV2_TP" @sriArgs
+
+      - name: Save sccache cache
+        uses: actions/cache/save@v4
+        if: github.event_name != 'pull_request' && steps.sccache-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: ${{ steps.sccache-cache.outputs.cache-primary-key }}
+
+      - name: Upload scenario logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sri-windows-${{ inputs.windows-compiler }}-${{ matrix.scenario }}-logs
+          path: |
+            ${{ env.RUNTIME_ROOT }}/logs/*.log
+            ${{ env.RUNTIME_ROOT }}/datadir/regtest/*.log

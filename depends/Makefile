@@ -34,8 +34,7 @@ BASE_CACHE ?= $(BASEDIR)/built
 SDK_PATH ?= $(BASEDIR)/SDKs
 NO_BOOST ?=
 NO_WALLET ?=
-# Default NO_IPC value is 1 on Windows
-NO_IPC ?= $(if $(findstring mingw32,$(HOST)),1,)
+NO_IPC ?=
 LTO ?=
 FALLBACK_DOWNLOAD_PATH ?= https://bitcoincore.org/depends-sources
 

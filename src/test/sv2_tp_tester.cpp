@@ -8,6 +8,7 @@
 #include <interfaces/init.h>
 #include <ipc/exception.h>
 #include <mp/proxy-io.h>
+#include <mp/util.h>
 #include <src/ipc/capnp/init.capnp.h>
 #include <src/ipc/capnp/init.capnp.proxy.h>
 #include <sv2/messages.h>
@@ -23,8 +24,6 @@ extern std::function<void(const std::string&)> G_TEST_LOG_FUN;
 #include <test/sv2_handshake_test_util.h>
 
 #include <future>
-#include <sys/socket.h>
-#include <unistd.h>
 
 namespace {
 //! Simulates a node without getTransactionsByTxID(), by throwing the same
@@ -69,6 +68,8 @@ private:
     std::unique_ptr<interfaces::Mining> m_mining;
 };
 
+} // namespace
+
 struct MockInit : public interfaces::Init {
     std::shared_ptr<MockState> state;
     explicit MockInit(std::shared_ptr<MockState> s) : state(std::move(s)) {}
@@ -77,7 +78,6 @@ struct MockInit : public interfaces::Init {
         return std::make_unique<MockMining>(state);
     }
 };
-} // namespace
 
 TPTester::TPTester() : TPTester(Sv2TemplateProviderOptions{.is_test = true}) {}
 
@@ -101,20 +101,23 @@ TPTester::TPTester(Sv2TemplateProviderOptions opts, MockNodeVersion version)
     loop_ready.get_future().wait();
 
     // Create socketpair for in-process IPC stream
-    int fds[2];
-    int rc = ::socketpair(AF_UNIX, SOCK_STREAM, 0, fds);
-    BOOST_REQUIRE_EQUAL(rc, 0);
-    m_ipc_fds[0] = fds[0];
-    m_ipc_fds[1] = fds[1];
+    m_ipc_fds = mp::SocketPair();
 
     // Create server Init exposing MockMining via shared state
     m_server_init = std::make_unique<MockInit>(m_state);
+    MockInit& server_init = *m_server_init;
     // Register server side on the event loop thread
     m_loop->sync([&] {
-        mp::ServeStream<ipc::capnp::messages::Init>(
+        mp::Stream server_stream{mp::MakeStream(*m_loop, m_ipc_fds[0])};
+        m_server_connection = std::make_unique<mp::Connection>(
             *m_loop,
-            mp::MakeStream(*m_loop, m_ipc_fds[0]),
-            *static_cast<MockInit*>(m_server_init.get()));
+            std::move(server_stream),
+            [&server_init](mp::Connection& connection) {
+                auto server_proxy = kj::heap<mp::ProxyServer<ipc::capnp::messages::Init>>(
+                    std::shared_ptr<MockInit>(&server_init, [](MockInit*) {}), connection);
+                return capnp::Capability::Client(kj::mv(server_proxy));
+            });
+        m_server_connection->onDisconnect([this] { m_server_connection.reset(); });
     });
 
     // Connect client side and fetch Mining proxy
@@ -142,22 +145,43 @@ TPTester::TPTester(Sv2TemplateProviderOptions opts, MockNodeVersion version)
 
 TPTester::~TPTester()
 {
+    // Set the interrupt flag before unblocking waitNext(), so the handler
+    // exits instead of issuing another IPC request during teardown.
+    if (m_tp) {
+        m_tp->RequestInterrupt();
+    }
+
+    // Signal the mock state directly (bypasses IPC) so that any
+    // MockBlockTemplate::waitNext() blocked on the event-loop thread
+    // returns immediately.
+    m_mining_control->Shutdown();
+
+    // Wait for the handler thread before releasing its IPC proxies.
+    if (m_tp) {
+        m_tp->Interrupt();
+        m_tp->StopThreads();
+    }
+
     // Hold a loop ref while tearing down dependent objects to keep loop alive.
     if (m_loop) {
         mp::EventLoopRef loop_ref{*m_loop};
-        // Destroy objects that may post work to the loop while the loop is guaranteed alive.
         m_tp.reset();
         m_mining_proxy.reset();
         m_client_init.reset();
-        // Server init can go after clients; it only owns exported capabilities.
+
+        // Process pending release/disconnect messages, then destroy the server
+        // connection on the event-loop thread before releasing the final loop ref.
+        m_loop->sync([] {});
+        m_loop->sync([this] { m_server_connection.reset(); });
+
         m_server_init.reset();
     } else {
+        m_server_connection.reset();
         m_tp.reset();
         m_mining_proxy.reset();
         m_client_init.reset();
         m_server_init.reset();
     }
-    // Join loop thread (loop exits automatically when refs & connections reach zero).
     if (m_loop_thread.joinable()) m_loop_thread.join();
 }
 

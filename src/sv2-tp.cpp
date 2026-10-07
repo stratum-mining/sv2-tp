@@ -180,6 +180,10 @@ MAIN_FUNCTION
         tfm::format(std::cerr, "Error: Specified data directory \"%s\" does not exist.\n", args.GetArg("-datadir", ""));
         return EXIT_FAILURE;
     }
+    if (!SetupNetworking()) {
+        tfm::format(std::cerr, "Error: Initializing networking failed\n");
+        return EXIT_FAILURE;
+    }
     SelectParams(args.GetChainType());
 
     // Set logging options using sv2-tp defaults

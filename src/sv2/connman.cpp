@@ -297,11 +297,14 @@ void Sv2Connman::ProcessSv2Message(const Sv2NetMsg& sv2_net_msg, Sv2Client& clie
         }
 
         LOCK(client.cs_send);
-        const uint32_t unsupported_flags{setup_conn.m_required_flags & ~m_supported_flags};
+        const uint32_t unsupported_required_flags{
+            setup_conn.m_flags & ~m_supported_flags & node::SETUP_CONNECTION_REQUIRED_FLAGS_MASK};
+        const uint32_t accepted_optional_flags{
+            setup_conn.m_flags & m_supported_flags & node::SETUP_CONNECTION_OPTIONAL_FLAGS_MASK};
 
         // Disconnect a client that connects on the wrong subprotocol.
         if (setup_conn.m_protocol != node::TEMPLATE_DISTRIBUTION_PROTOCOL) {
-            node::Sv2SetupConnectionErrorMsg setup_conn_err{unsupported_flags, std::string{"unsupported-protocol"}};
+            node::Sv2SetupConnectionErrorMsg setup_conn_err{unsupported_required_flags, std::string{"unsupported-protocol"}};
 
             LogPrintLevel(BCLog::SV2, BCLog::Level::Debug, "Send 0x02 SetupConnectionError to client id=%zu\n",
                           client.m_id);
@@ -314,7 +317,7 @@ void Sv2Connman::ProcessSv2Message(const Sv2NetMsg& sv2_net_msg, Sv2Client& clie
 
         // Disconnect a client if they are not running a compatible protocol version.
         if ((m_protocol_version < setup_conn.m_min_version) || (m_protocol_version > setup_conn.m_max_version)) {
-            node::Sv2SetupConnectionErrorMsg setup_conn_err{unsupported_flags, std::string{"protocol-version-mismatch"}};
+            node::Sv2SetupConnectionErrorMsg setup_conn_err{unsupported_required_flags, std::string{"protocol-version-mismatch"}};
             LogPrintLevel(BCLog::SV2, BCLog::Level::Debug, "Send 0x02 SetupConnection.Error to client id=%zu\n",
                           client.m_id);
             client.m_send_messages.emplace_back(setup_conn_err);
@@ -327,14 +330,14 @@ void Sv2Connman::ProcessSv2Message(const Sv2NetMsg& sv2_net_msg, Sv2Client& clie
             return;
         }
 
-        if (unsupported_flags != 0) {
-            node::Sv2SetupConnectionErrorMsg setup_conn_err{unsupported_flags, std::string{"unsupported-feature-flags"}};
+        if (unsupported_required_flags != 0) {
+            node::Sv2SetupConnectionErrorMsg setup_conn_err{unsupported_required_flags, std::string{"unsupported-feature-flags"}};
             LogPrintLevel(BCLog::SV2, BCLog::Level::Debug, "Send 0x02 SetupConnection.Error to client id=%zu\n",
                           client.m_id);
             client.m_send_messages.emplace_back(setup_conn_err);
 
-            LogPrintLevel(BCLog::SV2, BCLog::Level::Error, "Received a connection from client id=%zu with unsupported feature flags: 0x%x\n",
-                          client.m_id, unsupported_flags);
+            LogPrintLevel(BCLog::SV2, BCLog::Level::Error, "Received a connection from client id=%zu with unsupported required feature flags: 0x%x\n",
+                          client.m_id, unsupported_required_flags);
 
             LOCK(client.cs_status);
             client.m_disconnect_flag = true;
@@ -343,7 +346,7 @@ void Sv2Connman::ProcessSv2Message(const Sv2NetMsg& sv2_net_msg, Sv2Client& clie
 
         LogPrintLevel(BCLog::SV2, BCLog::Level::Debug, "Send 0x01 SetupConnection.Success to client id=%zu\n",
                       client.m_id);
-        node::Sv2SetupConnectionSuccessMsg setup_success{m_protocol_version, m_required_flags};
+        node::Sv2SetupConnectionSuccessMsg setup_success{m_protocol_version, m_required_flags | accepted_optional_flags};
         client.m_send_messages.emplace_back(setup_success);
 
         LOCK(client.cs_status);

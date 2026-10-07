@@ -27,6 +27,10 @@ namespace node {
 /** Template Distribution Protocol value used by SetupConnection. */
 static constexpr uint8_t TEMPLATE_DISTRIBUTION_PROTOCOL{0x02};
 
+/** SetupConnection flag ranges. */
+static constexpr uint32_t SETUP_CONNECTION_REQUIRED_FLAGS_MASK{0x0000ffff};
+static constexpr uint32_t SETUP_CONNECTION_OPTIONAL_FLAGS_MASK{0xffff0000};
+
 /**
  * A type used as the message length field in stratum v2 messages.
  */
@@ -85,10 +89,10 @@ struct Sv2SetupConnectionMsg
     uint16_t m_max_version;
 
     /**
-     * Flags indicating optional protocol features the client requires for this
-     * connection. Each protocol has its own values/flags.
+     * Flags indicating protocol features the client requires (bits 0-15) or
+     * optionally requests (bits 16-31). Each protocol has its own flags.
      */
-    uint32_t m_required_flags;
+    uint32_t m_flags;
 
     /**
      * ASCII text indicating the hostname or IP address.
@@ -126,7 +130,7 @@ struct Sv2SetupConnectionMsg
         s >> m_protocol
           >> m_min_version
           >> m_max_version
-          >> m_required_flags
+          >> m_flags
           >> m_endpoint_host
           >> m_endpoint_port
           >> m_vendor
@@ -200,18 +204,18 @@ struct Sv2SetupConnectionSuccessMsg
     uint16_t m_used_version;
 
     /**
-     * Flags indicating optional protocol features the server requires for this
-     * connection. Each protocol has its own values/flags.
+     * Flags indicating protocol features the server requires (bits 0-15) and
+     * optional client requests it accepts (bits 16-31).
      */
-    uint32_t m_required_flags;
+    uint32_t m_flags;
 
-    explicit Sv2SetupConnectionSuccessMsg(uint16_t used_version, uint32_t required_flags) : m_used_version{used_version}, m_required_flags{required_flags} {};
+    explicit Sv2SetupConnectionSuccessMsg(uint16_t used_version, uint32_t flags) : m_used_version{used_version}, m_flags{flags} {};
 
     template <typename Stream>
     void Serialize(Stream& s) const
     {
         s << m_used_version
-          << m_required_flags;
+          << m_flags;
     }
 };
 

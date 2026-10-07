@@ -40,10 +40,10 @@ BOOST_AUTO_TEST_CASE(client_tests)
     BOOST_REQUIRE(response.m_msg_type == node::Sv2MsgType::SETUP_CONNECTION_SUCCESS);
     DataStream response_stream{response.m_msg};
     uint16_t used_version;
-    uint32_t required_flags;
-    response_stream >> used_version >> required_flags;
+    uint32_t flags;
+    response_stream >> used_version >> flags;
     BOOST_REQUIRE_EQUAL(used_version, 2);
-    BOOST_REQUIRE_EQUAL(required_flags, 0);
+    BOOST_REQUIRE_EQUAL(flags, 0);
     BOOST_REQUIRE(tester.IsFullyConnected());
 
     std::vector<uint8_t> coinbase_output_max_additional_size_bytes{
@@ -163,6 +163,7 @@ BOOST_AUTO_TEST_CASE(request_transaction_data_before_setup_connection_error)
 BOOST_AUTO_TEST_CASE(setup_connection_validation)
 {
     ConnTester tester{};
+    constexpr uint32_t OPTIONAL_FLAG{uint32_t{1} << 16};
 
     const auto check_error = [&tester](uint8_t protocol, uint16_t min_version,
                                        uint16_t max_version, uint32_t flags,
@@ -186,8 +187,30 @@ BOOST_AUTO_TEST_CASE(setup_connection_validation)
                 /*expected_flags=*/1, "unsupported-protocol");
     check_error(node::TEMPLATE_DISTRIBUTION_PROTOCOL, /*min_version=*/3, /*max_version=*/2, /*flags=*/2,
                 /*expected_flags=*/2, "protocol-version-mismatch");
-    check_error(node::TEMPLATE_DISTRIBUTION_PROTOCOL, /*min_version=*/2, /*max_version=*/2, /*flags=*/0x80000001,
-                /*expected_flags=*/0x80000001, "unsupported-feature-flags");
+    check_error(node::TEMPLATE_DISTRIBUTION_PROTOCOL, /*min_version=*/2, /*max_version=*/2, /*flags=*/OPTIONAL_FLAG | 1,
+                /*expected_flags=*/1, "unsupported-feature-flags");
+}
+
+BOOST_AUTO_TEST_CASE(setup_connection_optional_flags)
+{
+    ConnTester tester{};
+    constexpr uint32_t OPTIONAL_FLAG{uint32_t{1} << 16};
+
+    tester.handshake();
+    node::Sv2NetMsg setup{tester.SetupConnectionMsg(node::TEMPLATE_DISTRIBUTION_PROTOCOL,
+                                                    /*min_version=*/2, /*max_version=*/2,
+                                                    /*flags=*/OPTIONAL_FLAG)};
+    tester.RemoteToLocalMsg(setup);
+
+    auto [response, _response_bytes]{tester.LocalToRemoteMsg()};
+    BOOST_REQUIRE(response.m_msg_type == node::Sv2MsgType::SETUP_CONNECTION_SUCCESS);
+    DataStream response_stream{response.m_msg};
+    uint16_t used_version;
+    uint32_t flags;
+    response_stream >> used_version >> flags;
+    BOOST_REQUIRE_EQUAL(used_version, 2);
+    BOOST_REQUIRE_EQUAL(flags, 0);
+    BOOST_REQUIRE(tester.IsFullyConnected());
 }
 
 // Only CoinbaseOutputConstraints that pass validation make a client ready for

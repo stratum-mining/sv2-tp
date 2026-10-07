@@ -105,6 +105,63 @@ node::Sv2NetMsg TestSubmitSolutionMsg()
     return node::Sv2NetMsg{node::Sv2MsgType::SUBMIT_SOLUTION, std::move(bytes)};
 }
 
+CMutableTransaction TestProposeTemplateCoinbase()
+{
+    CMutableTransaction coinbase;
+    coinbase.version = 2;
+    coinbase.vin.resize(1);
+    coinbase.vin[0].prevout.SetNull();
+    coinbase.vin[0].scriptSig = CScript() << 17 << std::vector<unsigned char>(8, 0x00);
+    coinbase.vin[0].scriptWitness.stack.push_back(std::vector<unsigned char>(32, 0x00));
+    coinbase.vout.resize(2);
+    coinbase.vout[0].nValue = 50 * COIN;
+    coinbase.vout[0].scriptPubKey = CScript() << OP_TRUE;
+    coinbase.vout[1].nValue = 0;
+    coinbase.vout[1].scriptPubKey = CScript() << OP_RETURN << std::vector<unsigned char>(36, 0xaa);
+    return coinbase;
+}
+
+node::Sv2NetMsg TestProposeTemplateMsg(uint32_t request_id, const std::vector<Wtxid>& wtxids)
+{
+    std::vector<unsigned char> coinbase;
+    VectorWriter{coinbase, 0, TX_WITH_WITNESS(TestProposeTemplateCoinbase())};
+    // nVersion, marker and flag, input count, prevout, scriptSig length,
+    // BIP34 height push, extranonce push opcode
+    constexpr size_t extranonce_start{4 + 2 + 1 + 36 + 1 + 2 + 1};
+    constexpr size_t extranonce_len{8};
+
+    DataStream ss{};
+    ss << request_id
+       << uint32_t{0x20000000}; // version
+    node::WriteB0_64K(ss, std::span{coinbase}.first(extranonce_start));
+    node::WriteB0_64K(ss, std::span{coinbase}.subspan(extranonce_start + extranonce_len));
+    ss << static_cast<uint16_t>(wtxids.size());
+    for (const Wtxid& wtxid : wtxids) ss << wtxid;
+    node::WriteB0_64K(ss, {}); // excess_data
+
+    std::vector<uint8_t> bytes(ss.size());
+    ss >> MakeWritableByteSpan(bytes);
+    return node::Sv2NetMsg{node::Sv2MsgType::PROPOSE_TEMPLATE, std::move(bytes)};
+}
+
+node::Sv2NetMsg TestProvideMissingTransactionsMsg(uint32_t request_id, const std::vector<CTransactionRef>& transaction_list)
+{
+    DataStream ss{};
+    ss << request_id
+       << static_cast<uint16_t>(transaction_list.size());
+    for (const CTransactionRef& tx : transaction_list) {
+        std::vector<unsigned char> raw;
+        VectorWriter{raw, 0, TX_WITH_WITNESS(*tx)};
+        const node::u24_t len{uint8_t(raw.size()), uint8_t(raw.size() >> 8), uint8_t(raw.size() >> 16)};
+        ss << len;
+        ss.write(MakeByteSpan(raw));
+    }
+
+    std::vector<uint8_t> bytes(ss.size());
+    ss >> MakeWritableByteSpan(bytes);
+    return node::Sv2NetMsg{node::Sv2MsgType::PROVIDE_MISSING_TRANSACTIONS_SUCCESS, std::move(bytes)};
+}
+
 Sv2LogCapture::Sv2LogCapture()
 {
     m_callback = LogInstance().PushBackCallback([this](const std::string& line) {

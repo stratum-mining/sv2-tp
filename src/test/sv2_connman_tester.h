@@ -43,12 +43,16 @@ public:
     void RemoteToLocalMsg(Sv2NetMsg& msg);
     bool IsConnected();
     bool IsFullyConnected();
+    size_t ClientCount();
+    void FailSends();
+    int SendFailures();
     Sv2NetMsg SetupConnectionMsg(uint8_t protocol = node::TEMPLATE_DISTRIBUTION_PROTOCOL,
                                  uint16_t min_version = 2,
                                  uint16_t max_version = 2,
                                  uint32_t flags = 0);
     /** Wait until a message counter reaches count. */
     bool WaitForCount(const std::atomic<size_t>& counter, size_t count);
+    bool WaitForClientCount(size_t count);
 
     void RequestTransactionData(Sv2Client& client, node::Sv2RequestTransactionDataMsg msg) override;
     void SubmitSolution(node::Sv2SubmitSolutionMsg solution) override;

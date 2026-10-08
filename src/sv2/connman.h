@@ -43,6 +43,9 @@ struct Sv2Client
     /** Queue of messages to be sent */
     std::deque<Sv2NetMsg> m_send_messages GUARDED_BY(cs_send);
 
+    /** Whether a socket send failed, so the queue can never be sent. */
+    bool m_send_failed GUARDED_BY(cs_send){false};
+
     /**
      * Whether the client has sent a valid CoinbaseOutputConstraints message.
      */
@@ -237,6 +240,9 @@ public:
             if (client.second->IsFullyConnected()) func(*client.second);
         }
     };
+
+    /** Number of clients, including those marked for disconnection, used for tests. */
+    size_t ClientCount() EXCLUSIVE_LOCKS_REQUIRED(m_clients_mutex) { return m_sv2_clients.size(); }
 
     /** Number of clients that are not marked for disconnection, used for tests. */
     size_t ConnectedClients() EXCLUSIVE_LOCKS_REQUIRED(m_clients_mutex)

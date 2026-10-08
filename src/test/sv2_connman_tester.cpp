@@ -117,6 +117,16 @@ bool ConnTester::IsConnected()
     return m_connman->ConnectedClients() > 0;
 }
 
+size_t ConnTester::ClientCount()
+{
+    LOCK(m_connman->m_clients_mutex);
+    return m_connman->ClientCount();
+}
+
+void ConnTester::FailSends() { m_current_client_pipes->fail_send = true; }
+
+int ConnTester::SendFailures() { return m_current_client_pipes->send_failures; }
+
 bool ConnTester::IsFullyConnected()
 {
     LOCK(m_connman->m_clients_mutex);
@@ -142,6 +152,16 @@ Sv2NetMsg ConnTester::SetupConnectionMsg(uint8_t protocol, uint16_t min_version,
     ss >> MakeWritableByteSpan(bytes);
 
     return node::Sv2NetMsg{node::Sv2MsgType::SETUP_CONNECTION, std::move(bytes)};
+}
+
+bool ConnTester::WaitForClientCount(size_t count)
+{
+    const auto start = std::chrono::steady_clock::now();
+    while (ClientCount() != count) {
+        if (std::chrono::steady_clock::now() - start > std::chrono::seconds{2}) return false;
+        UninterruptibleSleep(std::chrono::milliseconds{5});
+    }
+    return true;
 }
 
 bool ConnTester::WaitForCount(const std::atomic<size_t>& counter, size_t count)

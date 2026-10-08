@@ -12,6 +12,7 @@
 #include <span.h>
 #include <sync.h>
 
+#include <cerrno>
 #include <chrono>
 #include <optional>
 #include <vector>
@@ -183,6 +184,11 @@ ssize_t DynSock::Recv(void* buf, size_t len, int flags) const
 
 ssize_t DynSock::Send(const void* buf, size_t len, int) const
 {
+    if (m_pipes->fail_send) {
+        ++m_pipes->send_failures;
+        errno = ECONNRESET;
+        return -1;
+    }
     m_pipes->send.PushBytes(buf, len);
     return len;
 }

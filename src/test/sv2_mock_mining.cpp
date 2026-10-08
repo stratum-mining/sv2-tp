@@ -68,9 +68,10 @@ std::vector<CAmount> MockBlockTemplate::getTxFees()
 std::vector<int64_t> MockBlockTemplate::getTxSigops() { return {}; }
 node::CoinbaseTx MockBlockTemplate::getCoinbaseTx() { return ExtractCoinbaseTx(block.vtx[0]); }
 std::vector<uint256> MockBlockTemplate::getCoinbaseMerklePath() { return {}; }
-bool MockBlockTemplate::submitSolution(uint32_t, uint32_t, uint32_t, CTransactionRef, std::string& reason, std::string& debug)
+bool MockBlockTemplate::submitSolution(uint32_t, uint32_t, uint32_t, CTransactionRef coinbase, std::string& reason, std::string& debug)
 {
     ++state->submit_solution_calls;
+    if (state->store_submitted_coinbase && coinbase) block.vtx[0] = coinbase;
     if (state->reject_solution) {
         reason = "duplicate";
         debug = "block already known";
@@ -79,9 +80,10 @@ bool MockBlockTemplate::submitSolution(uint32_t, uint32_t, uint32_t, CTransactio
     return true;
 }
 
-bool MockBlockTemplate::submitSolutionOld7(uint32_t, uint32_t, uint32_t, CTransactionRef)
+bool MockBlockTemplate::submitSolutionOld7(uint32_t, uint32_t, uint32_t, CTransactionRef coinbase)
 {
     ++state->submit_solution_old7_calls;
+    if (state->store_submitted_coinbase && coinbase) block.vtx[0] = coinbase;
     return !state->reject_solution;
 }
 

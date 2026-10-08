@@ -22,6 +22,7 @@ extern std::function<void(const std::string&)> G_TEST_LOG_FUN;
 #include <test/sv2_mock_mining.h>
 #include <test/sv2_handshake_test_util.h>
 
+#include <algorithm>
 #include <future>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -283,6 +284,21 @@ void TPTester::SendSetupConnection(size_t peer_id)
     receiveMessage(setup, peer_id);
     // SetupConnection.Success is 6 bytes
     BOOST_REQUIRE_EQUAL(PeerReceiveBytes(peer_id), SV2_HEADER_ENCRYPTED_SIZE + 6 + Poly1305::TAGLEN);
+}
+
+void TPTester::SendSubmitSolutionCoinbase(uint64_t template_id, const CMutableTransaction& coinbase, size_t peer_id)
+{
+    DataStream tx_stream{};
+    tx_stream << TX_WITH_WITNESS(coinbase);
+
+    DataStream ss{};
+    ss << template_id << uint32_t{0x20000000} << uint32_t{0} << uint32_t{0}
+       << static_cast<uint16_t>(tx_stream.size());
+    ss.write(MakeByteSpan(tx_stream));
+    std::vector<uint8_t> bytes(ss.size());
+    std::transform(ss.begin(), ss.end(), bytes.begin(), [](std::byte b) { return uint8_t(b); });
+    node::Sv2NetMsg msg{node::Sv2MsgType::SUBMIT_SOLUTION, std::move(bytes)};
+    receiveMessage(msg, peer_id);
 }
 
 void TPTester::SendCoinbaseOutputConstraints(size_t peer_id, uint32_t max_additional_size)

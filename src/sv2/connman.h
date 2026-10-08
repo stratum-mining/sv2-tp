@@ -238,6 +238,9 @@ public:
         }
     };
 
+    /** Number of clients, including those marked for disconnection, used for tests. */
+    size_t ClientCount() EXCLUSIVE_LOCKS_REQUIRED(m_clients_mutex) { return m_sv2_clients.size(); }
+
     /** Number of clients that are not marked for disconnection, used for tests. */
     size_t ConnectedClients() EXCLUSIVE_LOCKS_REQUIRED(m_clients_mutex)
     {

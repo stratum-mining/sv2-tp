@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <condition_variable>
@@ -155,6 +156,8 @@ public:
     struct Pipes {
         Pipe recv;
         Pipe send;
+        std::atomic<bool> fail_send{false};
+        std::atomic<int> send_failures{0};
     };
 
     /**

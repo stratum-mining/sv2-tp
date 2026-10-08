@@ -43,6 +43,9 @@ struct Sv2Client
     /** Queue of messages to be sent */
     std::deque<Sv2NetMsg> m_send_messages GUARDED_BY(cs_send);
 
+    /** Whether a socket send failed, so the queue can never be sent. */
+    bool m_send_failed GUARDED_BY(cs_send){false};
+
     /**
      * Whether the client has sent a valid CoinbaseOutputConstraints message.
      */

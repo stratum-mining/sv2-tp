@@ -224,4 +224,19 @@ BOOST_AUTO_TEST_CASE(coinbase_output_constraints_set_after_validation)
     BOOST_CHECK_EQUAL(accepted.m_coinbase_constraints_generation.load(), 1U);
 }
 
+// A client whose socket send fails must be removed.
+BOOST_AUTO_TEST_CASE(send_error_removes_client)
+{
+    ConnTester tester{};
+    tester.handshake();
+    BOOST_REQUIRE_EQUAL(tester.ClientCount(), 1U);
+
+    tester.FailSends();
+    node::Sv2NetMsg setup{tester.SetupConnectionMsg()};
+    tester.RemoteToLocalMsg(setup);
+
+    BOOST_CHECK(tester.WaitForClientCount(0));
+    BOOST_CHECK(tester.SendFailures() > 0);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

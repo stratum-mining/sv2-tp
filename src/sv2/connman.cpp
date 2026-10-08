@@ -68,7 +68,7 @@ void Sv2Connman::DisconnectFlagged()
         std::shared_ptr<Sv2Client> client{it->second};
         LOCK(client->cs_send);
         LOCK(client->cs_status);
-        if (client->m_send_messages.empty() && client->m_disconnect_flag) {
+        if (client->m_disconnect_flag && (client->m_send_messages.empty() || client->m_send_failed)) {
             CloseConnection(it->second->m_id);
             it = m_sv2_clients.erase(it);
         } else {
@@ -165,6 +165,9 @@ std::pair<size_t, bool> Sv2Connman::SendMessagesAsBytes(Sv2Client& client)
                 LogDebug(BCLog::NET, "socket send error for peer=%d: %s\n",
                          client.m_id, errmsg);
                 CloseConnection(client.m_id);
+                client.m_send_failed = true;
+                LOCK(client.cs_status);
+                client.m_disconnect_flag = true;
             }
             break;
         }

@@ -1,6 +1,8 @@
 #include <consensus/amount.h>
 #include <boost/test/unit_test.hpp>
 #include <sv2/messages.h>
+#include <test/sv2_mock_mining.h>
+#include <test/sv2_test_setup.h>
 #include <util/strencodings.h>
 #include <primitives/transaction.h>
 #include <primitives/block.h>
@@ -310,5 +312,93 @@ BOOST_AUTO_TEST_CASE(Sv2SubmitSolution_test)
     BOOST_CHECK_EQUAL(submit_solution.m_version, 2);
     BOOST_CHECK_EQUAL(submit_solution.m_ntime, 1661877399);
     BOOST_CHECK_EQUAL(submit_solution.m_nonce, 58720255);
+}
+
+BOOST_AUTO_TEST_CASE(Sv2ProposeTemplate_test)
+{
+    const CTransactionRef tx{MakeDummyTx()};
+    const Wtxid other{Wtxid::FromUint256(uint256::ONE)};
+    node::Sv2NetMsg net_msg{TestProposeTemplateMsg(/*request_id=*/7, {tx->GetWitnessHash(), other})};
+
+    DataStream ss{net_msg.m_msg};
+    node::Sv2ProposeTemplateMsg msg;
+    ss >> msg;
+    BOOST_CHECK(ss.empty());
+
+    BOOST_CHECK_EQUAL(msg.m_request_id, 7);
+    BOOST_CHECK_EQUAL(msg.m_version, 0x20000000);
+    BOOST_REQUIRE_EQUAL(msg.m_wtxid_list.size(), 2);
+    BOOST_CHECK(msg.m_wtxid_list[0] == tx->GetWitnessHash());
+    BOOST_CHECK(msg.m_wtxid_list[1] == other);
+    BOOST_CHECK(msg.m_excess_data.empty());
+
+    // The prefix ends inside the scriptSig; the 8 missing extranonce bytes
+    // are filled with zeros, which is what the test coinbase has there.
+    const CMutableTransaction expected{TestProposeTemplateCoinbase()};
+    const CMutableTransaction coinbase{msg.Coinbase()};
+    BOOST_CHECK_EQUAL(coinbase.vin[0].scriptSig.size(), expected.vin[0].scriptSig.size());
+    BOOST_CHECK(CTransaction{coinbase}.GetWitnessHash() == CTransaction{expected}.GetWitnessHash());
+
+    // A scriptSig length below the bytes already present in the prefix
+    BOOST_REQUIRE_EQUAL(msg.m_coinbase_tx_prefix[4 + 2 + 1 + 36], 11);
+    msg.m_coinbase_tx_prefix[4 + 2 + 1 + 36] = 2;
+    BOOST_CHECK_THROW(msg.Coinbase(), std::ios_base::failure);
+    // A scriptSig that no block would accept
+    msg.m_coinbase_tx_prefix[4 + 2 + 1 + 36] = 101;
+    BOOST_CHECK_THROW(msg.Coinbase(), std::ios_base::failure);
+    msg.m_coinbase_tx_prefix[4 + 2 + 1 + 36] = 1;
+    BOOST_CHECK_THROW(msg.Coinbase(), std::ios_base::failure);
+}
+
+BOOST_AUTO_TEST_CASE(Sv2ProvideMissingTransactionsSuccess_test)
+{
+    const CTransactionRef tx{MakeDummyTx()};
+    node::Sv2NetMsg net_msg{TestProvideMissingTransactionsMsg(/*request_id=*/7, {tx})};
+    BOOST_CHECK(net_msg.m_msg_type == node::Sv2MsgType::PROVIDE_MISSING_TRANSACTIONS_SUCCESS);
+
+    DataStream ss{net_msg.m_msg};
+    node::Sv2ProvideMissingTransactionsSuccessMsg msg;
+    ss >> msg;
+    BOOST_CHECK(ss.empty());
+
+    BOOST_CHECK_EQUAL(msg.m_request_id, 7);
+    BOOST_REQUIRE_EQUAL(msg.m_transaction_list.size(), 1);
+    DataStream tx_stream{msg.m_transaction_list[0]};
+    CMutableTransaction mtx;
+    tx_stream >> TX_WITH_WITNESS(mtx);
+    BOOST_CHECK(tx_stream.empty());
+    BOOST_CHECK(CTransaction{mtx}.GetWitnessHash() == tx->GetWitnessHash());
+}
+
+BOOST_AUTO_TEST_CASE(Sv2ProposeTemplate_replies_test)
+{
+    {
+        // U32           07000000  request_id
+        // SEQ0_64K[U16] 0200      count
+        //               0100 2c01 positions 1 and 300
+        node::Sv2ProvideMissingTransactionsMsg msg{7, {1, 300}};
+        DataStream ss{};
+        ss << msg;
+        BOOST_CHECK_EQUAL(HexStr(ss), "0700000002000100" "2c01");
+    }
+    {
+        // U32  07000000          request_id
+        // U64  2a00000000000000  template_id
+        // U256 01 00..00         prev_hash
+        // U64  e803000000000000  fees
+        node::Sv2ProposeTemplateSuccessMsg msg{7, 42, uint256::ONE, 1000};
+        DataStream ss{};
+        ss << msg;
+        BOOST_CHECK_EQUAL(HexStr(ss), "07000000" "2a00000000000000" "0100000000000000000000000000000000000000000000000000000000000000" "e803000000000000");
+    }
+    {
+        // U32      07000000  request_id
+        // STR0_255 0d ...    error_code
+        // B0_64K   0100 78   error_details
+        node::Sv2ProposeTemplateErrorMsg msg{7, "bad-cb-amount", "x"};
+        DataStream ss{};
+        ss << msg;
+        BOOST_CHECK_EQUAL(HexStr(ss), "07000000" "0d" + HexStr(std::string{"bad-cb-amount"}) + "0100" "78");
+    }
 }
 BOOST_AUTO_TEST_SUITE_END()

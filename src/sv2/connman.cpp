@@ -30,9 +30,10 @@ Sv2Connman::~Sv2Connman()
     StopThreads();
 }
 
-bool Sv2Connman::Start(Sv2EventsInterface* msgproc, std::string host, uint16_t port)
+bool Sv2Connman::Start(Sv2EventsInterface* msgproc, std::string host, uint16_t port, uint32_t supported_flags)
 {
     m_msgproc = msgproc;
+    m_supported_flags = supported_flags;
 
     if (!Bind(host, port)) return false;
 
@@ -341,13 +342,16 @@ void Sv2Connman::ProcessSv2Message(const Sv2NetMsg& sv2_net_msg, Sv2Client& clie
             return;
         }
 
-        LogPrintLevel(BCLog::SV2, BCLog::Level::Debug, "Send 0x01 SetupConnection.Success to client id=%zu\n",
-                      client.m_id);
-        node::Sv2SetupConnectionSuccessMsg setup_success{m_protocol_version, m_required_flags};
+        // Echo the optional features the client asked for and we support.
+        const uint32_t accepted_flags{setup_conn.m_required_flags & m_supported_flags};
+        LogPrintLevel(BCLog::SV2, BCLog::Level::Debug, "Send 0x01 SetupConnection.Success (flags=0x%x) to client id=%zu\n",
+                      accepted_flags, client.m_id);
+        node::Sv2SetupConnectionSuccessMsg setup_success{m_protocol_version, m_required_flags | accepted_flags};
         client.m_send_messages.emplace_back(setup_success);
 
         LOCK(client.cs_status);
         client.m_setup_connection_confirmed = true;
+        client.m_job_validation = accepted_flags & node::REQUIRES_JOB_VALIDATION;
 
         break;
     }
@@ -446,7 +450,9 @@ void Sv2Connman::ProcessSv2Message(const Sv2NetMsg& sv2_net_msg, Sv2Client& clie
         bool setup_complete;
         {
             LOCK(client.cs_status);
-            setup_complete = client.m_setup_connection_confirmed && client.m_coinbase_output_constraints_recv;
+            // A client that negotiated REQUIRES_JOB_VALIDATION does not need
+            // CoinbaseOutputConstraints to be set up.
+            setup_complete = client.m_setup_connection_confirmed && (client.m_coinbase_output_constraints_recv || client.m_job_validation);
             if (!setup_complete) {
                 LogPrintLevel(BCLog::SV2, BCLog::Level::Warning, "Received RequestTransactionData before SetupConnection and CoinbaseOutputConstraints (setup_connection=%d, coinbase_output_constraints=%d) from client id=%zu\n",
                               client.m_setup_connection_confirmed, client.m_coinbase_output_constraints_recv, client.m_id);
@@ -465,6 +471,45 @@ void Sv2Connman::ProcessSv2Message(const Sv2NetMsg& sv2_net_msg, Sv2Client& clie
         }
 
         m_msgproc->RequestTransactionData(client, request_tx_data);
+
+        break;
+    }
+    case Sv2MsgType::PROPOSE_TEMPLATE:
+    case Sv2MsgType::PROVIDE_MISSING_TRANSACTIONS_SUCCESS: {
+        {
+            LOCK(client.cs_status);
+            // The spec forbids these messages on a connection that did not
+            // negotiate the flag, so treat them like any other out-of-order
+            // setup message.
+            if (!client.m_setup_connection_confirmed || !client.m_job_validation) {
+                LogPrintLevel(BCLog::SV2, BCLog::Level::Error, "Received %s without REQUIRES_JOB_VALIDATION (setup_connection=%d, job_validation=%d) from client id=%zu, disconnecting\n",
+                              node::SV2_MSG_NAMES.at(sv2_net_msg.m_msg_type), client.m_setup_connection_confirmed, client.m_job_validation, client.m_id);
+                client.m_disconnect_flag = true;
+                return;
+            }
+        }
+
+        if (sv2_net_msg.m_msg_type == Sv2MsgType::PROPOSE_TEMPLATE) {
+            node::Sv2ProposeTemplateMsg propose_template;
+            try {
+                ss >> propose_template;
+            } catch (const std::exception& e) {
+                LogPrintLevel(BCLog::SV2, BCLog::Level::Error, "Received invalid ProposeTemplate message from client id=%zu: %s\n",
+                              client.m_id, e.what());
+                return;
+            }
+            m_msgproc->ProposeTemplate(client, std::move(propose_template));
+        } else {
+            node::Sv2ProvideMissingTransactionsSuccessMsg provide_missing_transactions;
+            try {
+                ss >> provide_missing_transactions;
+            } catch (const std::exception& e) {
+                LogPrintLevel(BCLog::SV2, BCLog::Level::Error, "Received invalid ProvideMissingTransactions.Success message from client id=%zu: %s\n",
+                              client.m_id, e.what());
+                return;
+            }
+            m_msgproc->ProvideMissingTransactions(client, std::move(provide_missing_transactions));
+        }
 
         break;
     }

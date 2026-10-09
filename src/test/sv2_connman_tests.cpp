@@ -188,6 +188,56 @@ BOOST_AUTO_TEST_CASE(setup_connection_validation)
                 /*expected_flags=*/2, "protocol-version-mismatch");
     check_error(node::TEMPLATE_DISTRIBUTION_PROTOCOL, /*min_version=*/2, /*max_version=*/2, /*flags=*/0x80000001,
                 /*expected_flags=*/0x80000001, "unsupported-feature-flags");
+    // Without Start() enabling it, REQUIRES_JOB_VALIDATION is unsupported.
+    check_error(node::TEMPLATE_DISTRIBUTION_PROTOCOL, /*min_version=*/2, /*max_version=*/2, /*flags=*/node::REQUIRES_JOB_VALIDATION,
+                /*expected_flags=*/node::REQUIRES_JOB_VALIDATION, "unsupported-feature-flags");
+}
+
+// ProposeTemplate and ProvideMissingTransactions.Success are forwarded only on
+// a connection that negotiated REQUIRES_JOB_VALIDATION, which
+// SetupConnection.Success echoes.
+BOOST_AUTO_TEST_CASE(propose_template_requires_flag)
+{
+    Sv2LogCapture logs;
+    ConnTester tester{node::REQUIRES_JOB_VALIDATION};
+
+    tester.handshake();
+    node::Sv2NetMsg setup{tester.SetupConnectionMsg(node::TEMPLATE_DISTRIBUTION_PROTOCOL, /*min_version=*/2, /*max_version=*/2, node::REQUIRES_JOB_VALIDATION)};
+    tester.RemoteToLocalMsg(setup);
+    auto [response, _response_bytes]{tester.LocalToRemoteMsg()};
+    BOOST_REQUIRE(response.m_msg_type == node::Sv2MsgType::SETUP_CONNECTION_SUCCESS);
+    DataStream response_stream{response.m_msg};
+    uint16_t used_version;
+    uint32_t flags;
+    response_stream >> used_version >> flags;
+    BOOST_CHECK_EQUAL(flags, node::REQUIRES_JOB_VALIDATION);
+
+    node::Sv2NetMsg propose{TestProposeTemplateMsg(/*request_id=*/1, {})};
+    tester.RemoteToLocalMsg(propose);
+    BOOST_REQUIRE(tester.WaitForCount(tester.m_propose_template_count, 1));
+    node::Sv2NetMsg provide{TestProvideMissingTransactionsMsg(/*request_id=*/1, {})};
+    tester.RemoteToLocalMsg(provide);
+    BOOST_REQUIRE(tester.WaitForCount(tester.m_provide_missing_transactions_count, 1));
+    BOOST_REQUIRE(tester.IsConnected());
+
+    BOOST_TEST_MESSAGE("A client that did not ask for the flag is disconnected");
+    tester.handshake();
+    node::Sv2NetMsg plain_setup{tester.SetupConnectionMsg()};
+    tester.RemoteToLocalMsg(plain_setup);
+    BOOST_REQUIRE_EQUAL(tester.LocalToRemoteBytes(), SV2_HEADER_ENCRYPTED_SIZE + 6 + Poly1305::TAGLEN);
+    node::Sv2NetMsg unexpected{TestProposeTemplateMsg(/*request_id=*/2, {})};
+    tester.RemoteToLocalMsg(unexpected);
+    BOOST_REQUIRE(logs.WaitFor("Received ProposeTemplate without REQUIRES_JOB_VALIDATION (setup_connection=1, job_validation=0)"));
+    BOOST_REQUIRE_EQUAL(tester.m_propose_template_count, 1);
+
+    tester.handshake();
+    node::Sv2NetMsg other_plain_setup{tester.SetupConnectionMsg()};
+    tester.RemoteToLocalMsg(other_plain_setup);
+    BOOST_REQUIRE_EQUAL(tester.LocalToRemoteBytes(), SV2_HEADER_ENCRYPTED_SIZE + 6 + Poly1305::TAGLEN);
+    node::Sv2NetMsg unexpected_provide{TestProvideMissingTransactionsMsg(/*request_id=*/2, {})};
+    tester.RemoteToLocalMsg(unexpected_provide);
+    BOOST_REQUIRE(logs.WaitFor("Received ProvideMissingTransactions.Success without REQUIRES_JOB_VALIDATION (setup_connection=1, job_validation=0)"));
+    BOOST_REQUIRE_EQUAL(tester.m_provide_missing_transactions_count, 1);
 }
 
 // Only CoinbaseOutputConstraints that pass validation make a client ready for

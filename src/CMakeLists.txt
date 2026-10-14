@@ -102,7 +102,7 @@ if(BUILD_MINE)
     sv2-tp.cpp
     init/basic.cpp
   )
-  add_windows_resources(sv2-tp sv2-tp-res.rc)
+  add_windows_resources(sv2-tp sv2-tp.rc)
   add_windows_application_manifest(sv2-tp)
   target_link_libraries(sv2-tp
     core_interface

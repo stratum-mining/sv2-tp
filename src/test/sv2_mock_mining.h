@@ -44,6 +44,10 @@ struct MockState {
     Mutex m;
     //! Make getTip() fail on the IPC server.
     std::atomic<bool> fail_get_tip{false};
+    //! Make submitSolution() store the submitted coinbase in the template, like
+    //! Bitcoin Core does (AddMerkleRootAndCoinbase) whether or not the block is
+    //! accepted.
+    std::atomic<bool> store_submitted_coinbase{false};
     //! Make submitSolution() reject the block.
     std::atomic<bool> reject_solution{false};
     //! Number of calls to each submitSolution() variant, including calls that

@@ -10,6 +10,9 @@
 #include <util/sock.h>
 #include <util/time.h>
 #include <streams.h>
+#include <condition_variable>
+#include <deque>
+#include <map>
 #include <memory>
 
 using interfaces::BlockTemplate;
@@ -27,6 +30,19 @@ class CBlock;
 static constexpr int NODE_VERSION_31_0{310000};
 //! Bitcoin Core v32.0 mining interface. The node may be newer.
 static constexpr int NODE_VERSION_32_00{320000};
+
+/**
+ * ProposeTemplate requests per client that may wait for or undergo validation
+ * at once. Further requests get ProposeTemplate.Error job-validation-unavailable.
+ */
+static constexpr size_t MAX_PROPOSALS_IN_FLIGHT{4};
+/**
+ * ProposeTemplate requests per client that may wait for
+ * ProvideMissingTransactions.Success. Beyond this the oldest is forgotten.
+ */
+static constexpr size_t MAX_PENDING_PROPOSALS{8};
+/** How long a ProposeTemplate request waits for ProvideMissingTransactions.Success. */
+static constexpr std::chrono::seconds PENDING_PROPOSAL_TIMEOUT{30};
 
 struct Sv2TemplateProviderOptions
 {
@@ -89,6 +105,11 @@ private:
     std::thread m_thread_sv2_handler;
 
     /**
+     * Validates proposed templates, see ThreadSv2ProposalHandler().
+     */
+    std::thread m_thread_sv2_proposal_handler;
+
+    /**
      * Signal for handling interrupts and stopping the template provider event loop.
      */
     std::atomic<bool> m_flag_interrupt_sv2{false};
@@ -133,6 +154,37 @@ private:
     using BlockTemplateCache = std::map<uint64_t, std::pair<uint256, std::shared_ptr<BlockTemplate>>>;
     BlockTemplateCache m_block_template_cache GUARDED_BY(m_tp_mutex);
 
+    /**
+     * A ProposeTemplate request that passed the checks which need no node
+     * call, until it is answered.
+     */
+    struct Proposal {
+        size_t client_id;
+        uint32_t request_id;
+        uint32_t version;
+        CTransactionRef coinbase;
+        std::vector<Wtxid> wtxids;
+        //! The transaction for each entry of wtxids, nullptr while unknown.
+        std::vector<CTransactionRef> txs;
+        //! When a request in m_pending_proposals is forgotten.
+        std::chrono::seconds expires{0};
+    };
+
+    /**
+     * Proposals waiting for or undergoing validation, in arrival order. The
+     * front is the one ThreadSv2ProposalHandler() is working on.
+     */
+    std::deque<Proposal> m_proposal_queue GUARDED_BY(m_tp_mutex);
+
+    /**
+     * Proposals waiting for ProvideMissingTransactions.Success, by client id
+     * and request id.
+     */
+    std::map<std::pair<size_t, uint32_t>, Proposal> m_pending_proposals GUARDED_BY(m_tp_mutex);
+
+    /** Signals a new entry in m_proposal_queue. */
+    std::condition_variable_any m_proposal_cv;
+
 public:
     explicit Sv2TemplateProvider(interfaces::Mining& mining);
 
@@ -168,6 +220,13 @@ public:
     void ThreadSv2ClientHandler(size_t client_id) EXCLUSIVE_LOCKS_REQUIRED(!m_tp_mutex);
 
     /**
+     * Validates proposed templates one at a time, in arrival order across
+     * clients, so that the node calls this takes don't stall the networking
+     * thread. Replies are queued under the same locks SendWork() uses.
+     */
+    void ThreadSv2ProposalHandler() EXCLUSIVE_LOCKS_REQUIRED(!m_tp_mutex);
+
+    /**
      * Triggered on interrupt signals to stop the main event loop in ThreadSv2Handler().
      * Interrupts pending waitNext() calls.
      * Safe to call more than once.
@@ -194,6 +253,18 @@ public:
 
     void SubmitSolution(node::Sv2SubmitSolutionMsg solution) EXCLUSIVE_LOCKS_REQUIRED(!m_tp_mutex) override;
 
+    /**
+     * Runs the checks that need no node call and queues the request for
+     * ThreadSv2ProposalHandler().
+     */
+    void ProposeTemplate(Sv2Client& client, node::Sv2ProposeTemplateMsg msg) EXCLUSIVE_LOCKS_REQUIRED(!m_tp_mutex) override;
+
+    /**
+     * Fills in the transactions of a pending request and queues it for
+     * ThreadSv2ProposalHandler().
+     */
+    void ProvideMissingTransactions(Sv2Client& client, node::Sv2ProvideMissingTransactionsSuccessMsg msg) EXCLUSIVE_LOCKS_REQUIRED(!m_tp_mutex) override;
+
     /* Block templates that connected clients may be working on */
     BlockTemplateCache& GetBlockTemplates() EXCLUSIVE_LOCKS_REQUIRED(m_tp_mutex) { return m_block_template_cache; }
 
@@ -211,6 +282,21 @@ private:
 
     /** Serialize and write a block to disk asynchronously after a short delay, using the provided template. */
     void SaveBlockAsync(std::shared_ptr<BlockTemplate> block_template, bool submitted);
+
+    /** Queue a reply for a client that may have disconnected meanwhile. */
+    void SendToClient(size_t client_id, const node::Sv2NetMsg& msg);
+
+    void SendProposeTemplateError(size_t client_id, uint32_t request_id, const std::string& code, const std::string& details);
+
+    /** Append to m_proposal_queue, unless the request id is in use or the client has too many in flight. */
+    void QueueProposal(Proposal proposal) EXCLUSIVE_LOCKS_REQUIRED(!m_tp_mutex);
+
+    /**
+     * Fetch unknown transactions from the node and either ask the client for
+     * the rest or have the node check the assembled block. Replies to the
+     * client in every case.
+     */
+    void ValidateProposal(Proposal proposal) EXCLUSIVE_LOCKS_REQUIRED(!m_tp_mutex);
 
     /**
      * Sends the best NewTemplate and SetNewPrevHash to a client.

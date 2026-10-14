@@ -17,12 +17,72 @@
 #include <streams.h>
 #include <sync.h>
 
+#include <consensus/consensus.h>
+
 #include <algorithm>
 #include <limits>
+#include <map>
+#include <optional>
+#include <set>
 #include <string_view>
 
 // Allow a few seconds for clients to submit a block or to request transactions
 constexpr size_t STALE_TEMPLATE_GRACE_PERIOD{10};
+
+namespace {
+/**
+ * A block that a client proposed and the node accepted in checkBlock(). It
+ * lives in the template cache next to the node's own templates, so
+ * SubmitSolution, RequestTransactionData and cache pruning need no special
+ * case. A solution is broadcast through Mining::submitBlock().
+ *
+ * Bitcoin Core PR #35671 (TxCollection::makeTemplate()) would return a
+ * node-side equivalent of this object.
+ */
+class ProposedBlockTemplate : public BlockTemplate
+{
+public:
+    ProposedBlockTemplate(interfaces::Mining& mining, CBlock block) : m_mining{mining}, m_block{std::move(block)} {}
+
+    CBlockHeader getBlockHeader() override EXCLUSIVE_LOCKS_REQUIRED(!m_mutex) { return WITH_LOCK(m_mutex, return m_block.GetBlockHeader()); }
+    CBlock getBlock() override EXCLUSIVE_LOCKS_REQUIRED(!m_mutex) { return WITH_LOCK(m_mutex, return m_block); }
+
+    // The node validated the block, but told us nothing else about it.
+    std::vector<CAmount> getTxFees() override { throw std::logic_error("getTxFees() is not available for a proposed template"); }
+    std::vector<int64_t> getTxSigops() override { throw std::logic_error("getTxSigops() is not available for a proposed template"); }
+    node::CoinbaseTx getCoinbaseTx() override { throw std::logic_error("getCoinbaseTx() is not available for a proposed template"); }
+    std::vector<uint256> getCoinbaseMerklePath() override { throw std::logic_error("getCoinbaseMerklePath() is not available for a proposed template"); }
+    std::unique_ptr<BlockTemplate> waitNext(node::BlockWaitOptions) override { throw std::logic_error("waitNext() is not available for a proposed template"); }
+    // Sv2TemplateProvider::Interrupt() calls this on every cached template.
+    void interruptWait() override {}
+
+    bool submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase, std::string& reason, std::string& debug) override EXCLUSIVE_LOCKS_REQUIRED(!m_mutex)
+    {
+        CBlock block;
+        {
+            LOCK(m_mutex);
+            m_block.nVersion = static_cast<int32_t>(version);
+            m_block.nTime = timestamp;
+            m_block.nNonce = nonce;
+            m_block.vtx[0] = std::move(coinbase);
+            m_block.hashMerkleRoot = BlockMerkleRoot(m_block);
+            block = m_block;
+        }
+        return m_mining.submitBlock(block, reason, debug);
+    }
+
+    bool submitSolutionOld7(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase) override EXCLUSIVE_LOCKS_REQUIRED(!m_mutex)
+    {
+        std::string reason, debug;
+        return submitSolution(version, timestamp, nonce, std::move(coinbase), reason, debug);
+    }
+
+private:
+    interfaces::Mining& m_mining;
+    Mutex m_mutex;
+    CBlock m_block GUARDED_BY(m_mutex);
+};
+} // namespace
 
 Sv2TemplateProvider::Sv2TemplateProvider(interfaces::Mining& mining) : m_mining{mining}
 {
@@ -131,11 +191,17 @@ bool Sv2TemplateProvider::Start(const Sv2TemplateProviderOptions& options)
 
     DetectNodeVersion();
 
-    if (!m_connman->Start(this, m_options.host, m_options.port)) {
+    // ProposeTemplate needs getTransactionsByWitnessID() and submitBlock(),
+    // which Bitcoin Core v31 does not have.
+    const uint32_t supported_flags{m_node_version >= NODE_VERSION_32_00 ? node::REQUIRES_JOB_VALIDATION : 0};
+    if (!m_connman->Start(this, m_options.host, m_options.port, supported_flags)) {
         return false;
     }
 
     m_thread_sv2_handler = std::thread(&util::TraceThread, "sv2", [this] { ThreadSv2Handler(); });
+    if (supported_flags & node::REQUIRES_JOB_VALIDATION) {
+        m_thread_sv2_proposal_handler = std::thread(&util::TraceThread, "sv2-propose", [this] { ThreadSv2ProposalHandler(); });
+    }
     return true;
 }
 
@@ -192,6 +258,9 @@ void Sv2TemplateProvider::StopThreads()
 {
     if (m_thread_sv2_handler.joinable()) {
         m_thread_sv2_handler.join();
+    }
+    if (m_thread_sv2_proposal_handler.joinable()) {
+        m_thread_sv2_proposal_handler.join();
     }
 }
 
@@ -661,6 +730,218 @@ void Sv2TemplateProvider::SubmitSolution(node::Sv2SubmitSolutionMsg solution)
         }
 
         SaveBlockAsync(block_template, submitted);
+}
+
+void Sv2TemplateProvider::SendToClient(size_t client_id, const node::Sv2NetMsg& msg)
+{
+    LOCK(m_connman->m_clients_mutex);
+    const std::shared_ptr<Sv2Client> client{m_connman->GetClientById(client_id)};
+    if (!client) return;
+    LOCK(client->cs_send);
+    client->m_send_messages.push_back(msg);
+    m_connman->TryOptimisticSend(*client);
+}
+
+void Sv2TemplateProvider::SendProposeTemplateError(size_t client_id, uint32_t request_id, const std::string& code, const std::string& details)
+{
+    LogDebug(BCLog::SV2, "Send 0x7a ProposeTemplate.Error (%s) to client id=%zu\n", code, client_id);
+    SendToClient(client_id, node::Sv2NetMsg{node::Sv2ProposeTemplateErrorMsg{request_id, code, details}});
+}
+
+void Sv2TemplateProvider::ProposeTemplate(Sv2Client& client, node::Sv2ProposeTemplateMsg msg)
+{
+    // Everything in the request originates from a miner the client does not
+    // trust. The checks that need no node call run here, on the networking
+    // thread. ThreadSv2ProposalHandler() does the rest.
+    if (msg.m_wtxid_list.size() > MAX_BLOCK_WEIGHT / MIN_TRANSACTION_WEIGHT) return SendProposeTemplateError(client.m_id, msg.m_request_id, "bad-blk-length", "");
+    if (std::set<Wtxid>(msg.m_wtxid_list.begin(), msg.m_wtxid_list.end()).size() != msg.m_wtxid_list.size()) return SendProposeTemplateError(client.m_id, msg.m_request_id, "duplicate-wtxid", "");
+
+    Proposal proposal{.client_id = client.m_id, .request_id = msg.m_request_id, .version = msg.m_version};
+    try {
+        proposal.coinbase = MakeTransactionRef(msg.Coinbase());
+    } catch (const std::ios_base::failure& e) {
+        return SendProposeTemplateError(client.m_id, msg.m_request_id, "bad-cb-decode", e.what());
+    }
+    proposal.txs.resize(msg.m_wtxid_list.size());
+    proposal.wtxids = std::move(msg.m_wtxid_list);
+    QueueProposal(std::move(proposal));
+}
+
+void Sv2TemplateProvider::ProvideMissingTransactions(Sv2Client& client, node::Sv2ProvideMissingTransactionsSuccessMsg msg)
+{
+    std::optional<Proposal> found;
+    {
+        LOCK(m_tp_mutex);
+        const auto pending{m_pending_proposals.find({client.m_id, msg.m_request_id})};
+        if (pending != m_pending_proposals.end()) {
+            if (pending->second.expires > GetTime<std::chrono::seconds>()) found = std::move(pending->second);
+            m_pending_proposals.erase(pending);
+        }
+    }
+    if (!found) return SendProposeTemplateError(client.m_id, msg.m_request_id, "unknown-request-id", "");
+    Proposal proposal{std::move(*found)};
+
+    // Each supplied transaction must be one we asked for. Check that before
+    // any node call.
+    std::map<Wtxid, size_t> requested;
+    for (size_t i{0}; i < proposal.txs.size(); ++i) {
+        if (!proposal.txs[i]) requested.emplace(proposal.wtxids[i], i);
+    }
+    for (const std::vector<uint8_t>& raw : msg.m_transaction_list) {
+        CMutableTransaction mtx;
+        try {
+            DataStream ss{raw};
+            ss >> TX_WITH_WITNESS(mtx);
+            if (!ss.empty()) throw std::ios_base::failure("bytes after the transaction");
+        } catch (const std::ios_base::failure& e) {
+            return SendProposeTemplateError(client.m_id, msg.m_request_id, "bad-missing-tx", e.what());
+        }
+        CTransactionRef tx{MakeTransactionRef(std::move(mtx))};
+        const auto position{requested.find(tx->GetWitnessHash())};
+        if (position == requested.end()) return SendProposeTemplateError(client.m_id, msg.m_request_id, "bad-missing-tx", "transaction was not requested");
+        proposal.txs[position->second] = std::move(tx);
+        requested.erase(position);
+    }
+    if (!requested.empty()) return SendProposeTemplateError(client.m_id, msg.m_request_id, "bad-missing-tx", strprintf("%zu requested transactions not provided", requested.size()));
+
+    QueueProposal(std::move(proposal));
+}
+
+void Sv2TemplateProvider::QueueProposal(Proposal proposal)
+{
+    const size_t client_id{proposal.client_id};
+    const uint32_t request_id{proposal.request_id};
+    std::string error_code, error_details;
+    {
+        LOCK(m_tp_mutex);
+        const auto same_client{[client_id](const Proposal& p) { return p.client_id == client_id; }};
+        const auto same_request{[&](const Proposal& p) { return same_client(p) && p.request_id == request_id; }};
+        if (std::ranges::any_of(m_proposal_queue, same_request) || m_pending_proposals.contains({client_id, request_id})) {
+            error_code = "duplicate-request-id";
+        } else if (std::ranges::count_if(m_proposal_queue, same_client) >= static_cast<ptrdiff_t>(MAX_PROPOSALS_IN_FLIGHT)) {
+            error_code = "job-validation-unavailable";
+            error_details = strprintf("more than %zu proposals in flight", MAX_PROPOSALS_IN_FLIGHT);
+        } else {
+            m_proposal_queue.push_back(std::move(proposal));
+        }
+    }
+    if (!error_code.empty()) return SendProposeTemplateError(client_id, request_id, error_code, error_details);
+    m_proposal_cv.notify_one();
+}
+
+void Sv2TemplateProvider::ThreadSv2ProposalHandler()
+{
+    while (!m_flag_interrupt_sv2) {
+        Proposal proposal;
+        {
+            WAIT_LOCK(m_tp_mutex, lock);
+            // Bounded, so that an interrupt is noticed without a notification.
+            if (!m_proposal_cv.wait_for(lock, 100ms, [this]() EXCLUSIVE_LOCKS_REQUIRED(m_tp_mutex) { return !m_proposal_queue.empty(); })) continue;
+            // Stays in the queue while being validated, so that it counts
+            // towards MAX_PROPOSALS_IN_FLIGHT and duplicate-request-id.
+            proposal = m_proposal_queue.front();
+        }
+        ValidateProposal(std::move(proposal));
+        WITH_LOCK(m_tp_mutex, m_proposal_queue.pop_front());
+    }
+}
+
+void Sv2TemplateProvider::ValidateProposal(Proposal proposal)
+{
+    const auto error{[&](const std::string& code, const std::string& details) {
+        SendProposeTemplateError(proposal.client_id, proposal.request_id, code, details);
+    }};
+
+    try {
+        // Until the node has caught up, a block on its tip is not worth
+        // mining, and most of the mempool is missing.
+        if (m_mining.isInitialBlockDownload()) return error("job-validation-unavailable", "initial block download");
+
+        // Ask the node for whatever the client did not supply.
+        std::vector<Wtxid> lookup;
+        for (size_t i{0}; i < proposal.txs.size(); ++i) {
+            if (!proposal.txs[i]) lookup.push_back(proposal.wtxids[i]);
+        }
+        if (!lookup.empty()) {
+            const std::vector<CTransactionRef> found{m_mining.getTransactionsByWitnessID(lookup)};
+            size_t next{0};
+            for (CTransactionRef& tx : proposal.txs) {
+                if (!tx) tx = found.at(next++);
+            }
+        }
+
+        node::Sv2ProvideMissingTransactionsMsg missing{proposal.request_id, {}};
+        for (size_t i{0}; i < proposal.txs.size(); ++i) {
+            if (!proposal.txs[i]) missing.m_unknown_tx_position_list.push_back(static_cast<uint16_t>(i));
+        }
+        if (!missing.m_unknown_tx_position_list.empty()) {
+            LogDebug(BCLog::SV2, "Send 0x78 ProvideMissingTransactions (%zu of %zu) to client id=%zu\n",
+                     missing.m_unknown_tx_position_list.size(), proposal.txs.size(), proposal.client_id);
+            const size_t client_id{proposal.client_id};
+            const uint32_t request_id{proposal.request_id};
+            {
+                LOCK(m_tp_mutex);
+                const auto now{GetTime<std::chrono::seconds>()};
+                std::erase_if(m_pending_proposals, [now](const auto& kv) { return kv.second.expires <= now; });
+                // Forget the client's oldest request if it has too many.
+                const auto first{m_pending_proposals.lower_bound({client_id, 0})};
+                const auto last{m_pending_proposals.lower_bound({client_id + 1, 0})};
+                if (std::distance(first, last) >= static_cast<ptrdiff_t>(MAX_PENDING_PROPOSALS)) {
+                    m_pending_proposals.erase(std::min_element(first, last, [](const auto& a, const auto& b) { return a.second.expires < b.second.expires; }));
+                }
+                proposal.expires = now + PENDING_PROPOSAL_TIMEOUT;
+                m_pending_proposals.insert_or_assign({client_id, request_id}, std::move(proposal));
+            }
+            return SendToClient(client_id, node::Sv2NetMsg{missing});
+        }
+
+        CBlock block;
+        block.vtx.push_back(proposal.coinbase);
+        block.vtx.insert(block.vtx.end(), proposal.txs.begin(), proposal.txs.end());
+
+        // The block is checked on the node's tip, so it needs that tip's hash,
+        // nBits and a usable nTime. An empty template is the cheapest way to get
+        // a header for it through the mining interface.
+        const std::unique_ptr<BlockTemplate> tip_template{m_mining.createNewBlock({.use_mempool = false}, /*cooldown=*/false)};
+        if (!tip_template) return error("job-validation-unavailable", "node is shutting down");
+        const CBlockHeader tip_header{tip_template->getBlockHeader()};
+        block.hashPrevBlock = tip_header.hashPrevBlock;
+        block.nBits = tip_header.nBits;
+        block.nTime = tip_header.nTime;
+        block.nVersion = static_cast<int32_t>(proposal.version);
+
+        std::string reason, debug;
+        if (!m_mining.checkBlock(block, {.check_merkle_root = false, .check_pow = false}, reason, debug)) {
+            return error(reason, debug);
+        }
+
+        const uint256 prev_hash{block.hashPrevBlock};
+        uint64_t template_id;
+        {
+            LOCK(m_tp_mutex);
+            // The node checked the block on its tip, so for cache pruning that
+            // is the best tip we know of, as when a template arrives.
+            if (prev_hash != m_best_prev_hash) {
+                m_best_prev_hash = prev_hash;
+                m_last_block_time = GetTime<std::chrono::seconds>();
+            }
+            template_id = ++m_template_id;
+            m_block_template_cache.insert({template_id, std::make_pair(prev_hash, std::make_shared<ProposedBlockTemplate>(m_mining, std::move(block)))});
+        }
+
+        // The mining interface does not return the fee total for a block it only
+        // checked: checkBlock() yields a reason and debug string, and a template
+        // made from a client's transaction list cannot answer getTxFees(). Send 0
+        // (unknown) until Core exposes it, see bitcoin/bitcoin#35671.
+        LogDebug(BCLog::SV2, "Send 0x79 ProposeTemplate.Success id=%lu to client id=%zu\n", template_id, proposal.client_id);
+        SendToClient(proposal.client_id, node::Sv2NetMsg{node::Sv2ProposeTemplateSuccessMsg{proposal.request_id, template_id, prev_hash, /*fees=*/0}});
+    } catch (const std::exception& e) {
+        // Usually the node connection was lost, which the main thread notices
+        // and handles, so log at Debug only.
+        LogPrintLevel(BCLog::SV2, BCLog::Level::Debug, "Could not validate proposal request_id=%u from client id=%zu: %s\n",
+                      proposal.request_id, proposal.client_id, e.what());
+        error("job-validation-unavailable", e.what());
+    }
 }
 
 void Sv2TemplateProvider::SaveBlockAsync(std::shared_ptr<BlockTemplate> block_template, bool submitted)

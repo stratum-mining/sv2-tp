@@ -7,7 +7,9 @@
 
 #include <net.h> // for CSerializedNetMsg and CNetMessage
 #include <consensus/validation.h>
+#include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <span.h>
@@ -28,6 +30,13 @@ namespace node {
 static constexpr uint8_t TEMPLATE_DISTRIBUTION_PROTOCOL{0x02};
 
 /**
+ * SetupConnection.flags bit: the client intends to send ProposeTemplate. We
+ * echo it in SetupConnection.Success.flags when accepted.
+ * https://github.com/stratum-mining/sv2-spec/discussions/239
+ */
+static constexpr uint32_t REQUIRES_JOB_VALIDATION{1 << 0};
+
+/**
  * A type used as the message length field in stratum v2 messages.
  */
 using u24_t = uint8_t[3];
@@ -45,6 +54,11 @@ enum class Sv2MsgType : uint8_t {
     REQUEST_TRANSACTION_DATA_SUCCESS = 0x74,
     REQUEST_TRANSACTION_DATA_ERROR = 0x75,
     SUBMIT_SOLUTION = 0x76,
+    PROPOSE_TEMPLATE = 0x77,
+    PROVIDE_MISSING_TRANSACTIONS = 0x78,
+    PROPOSE_TEMPLATE_SUCCESS = 0x79,
+    PROPOSE_TEMPLATE_ERROR = 0x7a,
+    PROVIDE_MISSING_TRANSACTIONS_SUCCESS = 0x7b,
     COINBASE_OUTPUT_CONSTRAINTS = 0x70,
 };
 
@@ -58,8 +72,33 @@ static const std::map<Sv2MsgType, std::string> SV2_MSG_NAMES{
     {Sv2MsgType::REQUEST_TRANSACTION_DATA_SUCCESS, "RequestTransactionData.Success"},
     {Sv2MsgType::REQUEST_TRANSACTION_DATA_ERROR, "RequestTransactionData.Error"},
     {Sv2MsgType::SUBMIT_SOLUTION, "SubmitSolution"},
+    {Sv2MsgType::PROPOSE_TEMPLATE, "ProposeTemplate"},
+    {Sv2MsgType::PROVIDE_MISSING_TRANSACTIONS, "ProvideMissingTransactions"},
+    {Sv2MsgType::PROPOSE_TEMPLATE_SUCCESS, "ProposeTemplate.Success"},
+    {Sv2MsgType::PROPOSE_TEMPLATE_ERROR, "ProposeTemplate.Error"},
+    {Sv2MsgType::PROVIDE_MISSING_TRANSACTIONS_SUCCESS, "ProvideMissingTransactions.Success"},
     {Sv2MsgType::COINBASE_OUTPUT_CONSTRAINTS, "CoinbaseOutputConstraints"},
 };
+
+/** Read a B0_64K: two byte length followed by the bytes. */
+template <typename Stream>
+std::vector<uint8_t> ReadB0_64K(Stream& s)
+{
+    uint16_t len;
+    s >> len;
+    std::vector<uint8_t> bytes(len);
+    s.read(MakeWritableByteSpan(bytes));
+    return bytes;
+}
+
+/** Write a B0_64K, truncating anything beyond what the length field can express. */
+template <typename Stream>
+void WriteB0_64K(Stream& s, std::span<const uint8_t> bytes)
+{
+    const size_t len{std::min<size_t>(bytes.size(), std::numeric_limits<uint16_t>::max())};
+    s << static_cast<uint16_t>(len);
+    s.write(MakeByteSpan(bytes.first(len)));
+}
 
 struct Sv2SetupConnectionMsg
 {
@@ -586,6 +625,213 @@ struct Sv2SubmitSolutionMsg
         // the m_coinbase_tx.
         s.ignore(2);
         s >> TX_WITH_WITNESS(m_coinbase_tx);
+    }
+};
+
+/**
+ * A Job Declarator Server asks whether a Custom Job that a miner declared to
+ * it would be a consensus-valid block on top of our tip, checking everything
+ * except proof-of-work and the merkle root. Only accepted on connections that
+ * negotiated REQUIRES_JOB_VALIDATION.
+ *
+ * https://github.com/stratum-mining/sv2-spec/discussions/239
+ */
+struct Sv2ProposeTemplateMsg
+{
+    /**
+     * The default message type value for this Stratum V2 message.
+     */
+    static constexpr auto m_msg_type = Sv2MsgType::PROPOSE_TEMPLATE;
+
+    /** Identifier for pairing the response. */
+    uint32_t m_request_id;
+
+    /** Block header version field, as in DeclareMiningJob.version. */
+    uint32_t m_version;
+
+    /**
+     * Serialized coinbase up to the extranonce, which ends the scriptSig.
+     * As in DeclareMiningJob.coinbase_tx_prefix.
+     */
+    std::vector<uint8_t> m_coinbase_tx_prefix;
+
+    /** Serialized coinbase from nSequence to the end, as in DeclareMiningJob.coinbase_tx_suffix. */
+    std::vector<uint8_t> m_coinbase_tx_suffix;
+
+    /** wtxid of every transaction except the coinbase, in block order. */
+    std::vector<Wtxid> m_wtxid_list;
+
+    /** Copied from DeclareMiningJob.excess_data, not used for validation. */
+    std::vector<uint8_t> m_excess_data;
+
+    /**
+     * Assemble the coinbase as prefix || extranonce || suffix. The scriptSig
+     * length encoded in the prefix minus the scriptSig bytes present in it is
+     * the extranonce size. Its value is irrelevant: it does not affect any
+     * check that skips the merkle root and proof-of-work.
+     *
+     * @throws std::ios_base::failure if the prefix or suffix is malformed.
+     */
+    CMutableTransaction Coinbase() const;
+
+    template <typename Stream>
+    void Unserialize(Stream& s)
+    {
+        s >> m_request_id >> m_version;
+        m_coinbase_tx_prefix = ReadB0_64K(s);
+        m_coinbase_tx_suffix = ReadB0_64K(s);
+
+        uint16_t wtxid_count;
+        s >> wtxid_count;
+        m_wtxid_list.resize(wtxid_count);
+        for (Wtxid& wtxid : m_wtxid_list) {
+            s >> wtxid;
+        }
+
+        m_excess_data = ReadB0_64K(s);
+    }
+};
+
+/**
+ * We do not have some of the transactions in ProposeTemplate.wtxid_list. The
+ * request stays pending until the client sends them in
+ * ProvideMissingTransactions.Success, or for PENDING_PROPOSAL_TIMEOUT.
+ *
+ * Same layout as the Job Declaration Protocol message of this name.
+ */
+struct Sv2ProvideMissingTransactionsMsg
+{
+    /**
+     * The default message type value for this Stratum V2 message.
+     */
+    static constexpr auto m_msg_type = Sv2MsgType::PROVIDE_MISSING_TRANSACTIONS;
+
+    /** Identifier of the ProposeTemplate request. */
+    uint32_t m_request_id;
+
+    /** Positions in wtxid_list of the transactions we do not have, 0-indexed. */
+    std::vector<uint16_t> m_unknown_tx_position_list;
+
+    template <typename Stream>
+    void Serialize(Stream& s) const
+    {
+        s << m_request_id
+          << static_cast<uint16_t>(m_unknown_tx_position_list.size());
+        for (const uint16_t pos : m_unknown_tx_position_list) {
+            s << pos;
+        }
+    }
+};
+
+/**
+ * The transactions we asked for in ProvideMissingTransactions. Each must hash
+ * to a wtxid at one of the requested positions.
+ *
+ * Same layout as the Job Declaration Protocol message of this name.
+ */
+struct Sv2ProvideMissingTransactionsSuccessMsg
+{
+    /**
+     * The default message type value for this Stratum V2 message.
+     */
+    static constexpr auto m_msg_type = Sv2MsgType::PROVIDE_MISSING_TRANSACTIONS_SUCCESS;
+
+    /** Identifier of the ProposeTemplate request. */
+    uint32_t m_request_id;
+
+    /** Serialized transactions, in any order. */
+    std::vector<std::vector<uint8_t>> m_transaction_list;
+
+    template <typename Stream>
+    void Unserialize(Stream& s)
+    {
+        s >> m_request_id;
+
+        // SEQ0_64K[B0_16M]
+        uint16_t tx_count;
+        s >> tx_count;
+        m_transaction_list.resize(tx_count);
+        for (std::vector<uint8_t>& tx : m_transaction_list) {
+            u24_t tx_byte_len;
+            s >> tx_byte_len;
+            const uint32_t tx_size{static_cast<uint32_t>(tx_byte_len[0]) | static_cast<uint32_t>(tx_byte_len[1]) << 8 | static_cast<uint32_t>(tx_byte_len[2]) << 16};
+            tx.resize(tx_size);
+            s.read(MakeWritableByteSpan(tx));
+        }
+    }
+};
+
+/**
+ * The proposed block is consensus-valid on our tip. We track it under
+ * template_id so the client can later send SubmitSolution for it.
+ */
+struct Sv2ProposeTemplateSuccessMsg
+{
+    /**
+     * The default message type value for this Stratum V2 message.
+     */
+    static constexpr auto m_msg_type = Sv2MsgType::PROPOSE_TEMPLATE_SUCCESS;
+
+    /** Identifier of the ProposeTemplate request. */
+    uint32_t m_request_id;
+
+    /**
+     * Our identification of the validated template, from the same strictly
+     * increasing namespace as NewTemplate.template_id.
+     */
+    uint64_t m_template_id;
+
+    /** Hash of the tip the template was validated on. */
+    uint256 m_prev_hash;
+
+    /**
+     * Total transaction fees in the proposed block, in satoshis. Only the
+     * validating node can compute this. 0 means unknown.
+     */
+    uint64_t m_fees;
+
+    template <typename Stream>
+    void Serialize(Stream& s) const
+    {
+        s << m_request_id
+          << m_template_id
+          << m_prev_hash
+          << m_fees;
+    }
+};
+
+/**
+ * The proposed block was not validated.
+ */
+struct Sv2ProposeTemplateErrorMsg
+{
+    /**
+     * The default message type value for this Stratum V2 message.
+     */
+    static constexpr auto m_msg_type = Sv2MsgType::PROPOSE_TEMPLATE_ERROR;
+
+    /** Identifier of the ProposeTemplate request. */
+    uint32_t m_request_id;
+
+    /**
+     * Human-readable error code: the node's BIP22 rejection reason, or one of
+     * duplicate-wtxid, bad-cb-decode, duplicate-request-id,
+     * unknown-request-id, bad-missing-tx, job-validation-unavailable.
+     */
+    std::string m_error_code;
+
+    /** The node's more detailed rejection reason, may be empty. */
+    std::string m_error_details;
+
+    template <typename Stream>
+    void Serialize(Stream& s) const
+    {
+        // STR0_255: one byte length followed by the bytes
+        const size_t code_len{std::min<size_t>(m_error_code.size(), std::numeric_limits<uint8_t>::max())};
+        s << m_request_id
+          << static_cast<uint8_t>(code_len);
+        s.write(MakeByteSpan(m_error_code).first(code_len));
+        WriteB0_64K(s, MakeUCharSpan(m_error_details));
     }
 };
 

@@ -82,6 +82,34 @@ node::CoinbaseTx ExtractCoinbaseTx(const CTransactionRef coinbase_tx)
 node::Sv2NewTemplateMsg::Sv2NewTemplateMsg(const CBlockHeader& header, const CTransactionRef coinbase_tx, std::vector<uint256> coinbase_merkle_path, uint64_t template_id, bool future_template) :
     node::Sv2NewTemplateMsg(header, ExtractCoinbaseTx(coinbase_tx), coinbase_merkle_path, template_id, future_template) {};
 
+CMutableTransaction node::Sv2ProposeTemplateMsg::Coinbase() const
+{
+    // The prefix holds nVersion, the BIP144 marker and flag for a segwit
+    // coinbase, the input count, the null prevout, the scriptSig length and
+    // the part of the scriptSig before the extranonce.
+    DataStream prefix{m_coinbase_tx_prefix};
+    prefix.ignore(4);
+    if (prefix.size() >= 2 && prefix[0] == std::byte{0x00} && prefix[1] == std::byte{0x01}) prefix.ignore(2);
+    if (ReadCompactSize(prefix) != 1) throw std::ios_base::failure("coinbase must have one input");
+    prefix.ignore(32 + 4);
+    const uint64_t script_sig_len{ReadCompactSize(prefix)};
+    // Consensus limits the coinbase scriptSig to 2 through 100 bytes
+    // (bad-cb-length). Refusing anything larger also bounds the allocation below.
+    if (script_sig_len < 2 || script_sig_len > 100) throw std::ios_base::failure("coinbase scriptSig length out of range");
+    if (prefix.size() > script_sig_len) throw std::ios_base::failure("prefix holds more scriptSig bytes than its length");
+    const size_t extranonce_len{script_sig_len - prefix.size()};
+
+    std::vector<uint8_t> raw{m_coinbase_tx_prefix};
+    raw.resize(raw.size() + extranonce_len, 0);
+    raw.insert(raw.end(), m_coinbase_tx_suffix.begin(), m_coinbase_tx_suffix.end());
+
+    DataStream ss{raw};
+    CMutableTransaction coinbase;
+    ss >> TX_WITH_WITNESS(coinbase);
+    if (!ss.empty()) throw std::ios_base::failure("bytes after the coinbase");
+    return coinbase;
+}
+
 node::Sv2SetNewPrevHashMsg::Sv2SetNewPrevHashMsg(const CBlockHeader& header, uint64_t template_id) : m_template_id{template_id}
 {
     m_prev_hash = header.hashPrevBlock;

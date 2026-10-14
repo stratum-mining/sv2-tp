@@ -27,9 +27,9 @@ extern std::function<void(const std::string&)> G_TEST_LOG_FUN;
 #include <unistd.h>
 
 namespace {
-//! Simulates a node without getTransactionsByTxID(), by throwing the same
-//! exception the IPC layer raises for a method the other side does not
-//! implement.
+//! Simulates a node without submitBlock() and the getTransactionsBy*()
+//! lookups, by throwing the same exception the IPC layer raises for a method
+//! the other side does not implement.
 //!
 //! The mock server can't do this, because it implements every method of the
 //! current interface. Having it throw instead would not be the same thing: a
@@ -56,11 +56,15 @@ public:
     {
         return m_mining->checkBlock(block, options, reason, debug);
     }
-    bool submitBlock(const CBlock& block, std::string& reason, std::string& debug) override
+    bool submitBlock(const CBlock&, std::string&, std::string&) override
     {
-        return m_mining->submitBlock(block, reason, debug);
+        throw ipc::Exception("kj::Exception: remote exception: Method not implemented.");
     }
     std::vector<CTransactionRef> getTransactionsByTxID(const std::vector<Txid>&) override
+    {
+        throw ipc::Exception("kj::Exception: remote exception: Method not implemented.");
+    }
+    std::vector<CTransactionRef> getTransactionsByWitnessID(const std::vector<Wtxid>&) override
     {
         throw ipc::Exception("kj::Exception: remote exception: Method not implemented.");
     }
@@ -277,12 +281,21 @@ size_t TPTester::GetBlockTemplateCount()
     return m_tp->GetBlockTemplates().size();
 }
 
-void TPTester::SendSetupConnection(size_t peer_id)
+void TPTester::SendSetupConnection(size_t peer_id, uint32_t flags)
 {
     node::Sv2NetMsg setup{SetupConnectionMsg()};
+    // flags follow protocol, min_version and max_version
+    for (size_t i{0}; i < 4; ++i) setup.m_msg[5 + i] = static_cast<uint8_t>(flags >> (8 * i));
     receiveMessage(setup, peer_id);
     // SetupConnection.Success is 6 bytes
-    BOOST_REQUIRE_EQUAL(PeerReceiveBytes(peer_id), SV2_HEADER_ENCRYPTED_SIZE + 6 + Poly1305::TAGLEN);
+    Sv2NetMsg response{node::Sv2MsgType::SETUP_CONNECTION_SUCCESS, {}};
+    BOOST_REQUIRE_EQUAL(PeerReceiveBytes(peer_id, &response), SV2_HEADER_ENCRYPTED_SIZE + 6 + Poly1305::TAGLEN);
+    BOOST_REQUIRE(response.m_msg_type == node::Sv2MsgType::SETUP_CONNECTION_SUCCESS);
+    DataStream response_stream{response.m_msg};
+    uint16_t used_version;
+    uint32_t accepted_flags;
+    response_stream >> used_version >> accepted_flags;
+    BOOST_CHECK_EQUAL(accepted_flags, flags);
 }
 
 void TPTester::SendCoinbaseOutputConstraints(size_t peer_id, uint32_t max_additional_size)

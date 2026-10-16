@@ -36,7 +36,7 @@ BOOST_AUTO_TEST_CASE(Sv2SetupConnection_test)
     BOOST_CHECK_EQUAL(setup_conn.m_protocol, 2);
     BOOST_CHECK_EQUAL(setup_conn.m_min_version, 2);
     BOOST_CHECK_EQUAL(setup_conn.m_max_version, 2);
-    BOOST_CHECK_EQUAL(setup_conn.m_required_flags, 1);
+    BOOST_CHECK_EQUAL(setup_conn.m_flags, 1);
     BOOST_CHECK_EQUAL(setup_conn.m_endpoint_host, "0.0.0.0");
     BOOST_CHECK_EQUAL(setup_conn.m_endpoint_port, 8545);
     BOOST_CHECK_EQUAL(setup_conn.m_vendor, "Bitmain");

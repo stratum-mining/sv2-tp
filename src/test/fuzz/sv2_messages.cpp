@@ -119,7 +119,7 @@ FUZZ_TARGET(sv2_setup_connection, .init = Sv2FuzzInitialize)
     assert(msg.m_protocol == protocol);
     assert(msg.m_min_version == min_version);
     assert(msg.m_max_version == max_version);
-    assert(msg.m_required_flags == flags);
+    assert(msg.m_flags == flags);
     assert(msg.m_endpoint_host == endpoint_host);
     assert(msg.m_endpoint_port == endpoint_port);
     assert(msg.m_vendor == vendor);

@@ -576,17 +576,13 @@ void Sv2TemplateProvider::RequestTransactionData(Sv2Client& client, node::Sv2Req
         }
     }
 
-    std::vector<uint8_t> witness_reserve_value;
-    auto scriptWitness = block.vtx[0]->vin[0].scriptWitness;
-    if (!scriptWitness.IsNull()) {
-        std::copy(scriptWitness.stack[0].begin(), scriptWitness.stack[0].end(), std::back_inserter(witness_reserve_value));
-    }
     std::vector<CTransactionRef> txs;
     if (block.vtx.size() > 0) {
         std::copy(block.vtx.begin() + 1, block.vtx.end(), std::back_inserter(txs));
     }
 
-    node::Sv2RequestTransactionDataSuccessMsg request_tx_data_success{msg.m_template_id, std::move(witness_reserve_value), std::move(txs)};
+    // No excess data is currently defined. The coinbase witness does not belong in this field.
+    node::Sv2RequestTransactionDataSuccessMsg request_tx_data_success{msg.m_template_id, /*excess_data=*/{}, std::move(txs)};
 
     LogPrintLevel(BCLog::SV2, BCLog::Level::Debug, "Send 0x74 RequestTransactionData.Success to client id=%zu\n",
                     client.m_id);

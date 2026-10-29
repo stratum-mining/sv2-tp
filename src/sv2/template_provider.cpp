@@ -696,15 +696,17 @@ void Sv2TemplateProvider::SaveBlockAsync(std::shared_ptr<BlockTemplate> block_te
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
         try {
             // Retrieve block after delay
-            const CBlock block{block_template->getBlock()};
-            const uint256 block_hash = block.GetHash();
+            const auto block = block_template->getSerializedBlock();
+            // Only the header is needed to name the diagnostic file. Retaining
+            // the bytes avoids decoding and hashing every transaction on the IPC
+            // loop, which can save several milliseconds for large blocks.
+            CBlockHeader header;
+            SpanReader reader{MakeByteSpan(block.bytes)};
+            reader >> header;
+            const uint256 block_hash = header.GetHash();
             const fs::path out_path = gArgs.GetDataDirNet() / (block_hash.ToString() + ".dat").c_str();
 
-            // Serialize block including witness data
-            std::vector<unsigned char> block_data;
-            VectorWriter writer{block_data, 0};
-            writer << TX_WITH_WITNESS(block);
-            const std::string bytes{reinterpret_cast<const char*>(block_data.data()), block_data.size()};
+            const std::string bytes{reinterpret_cast<const char*>(block.bytes.data()), block.bytes.size()};
 
             if (!WriteBinaryFile(out_path, bytes)) {
                 LogPrintLevel(BCLog::SV2, BCLog::Level::Error,

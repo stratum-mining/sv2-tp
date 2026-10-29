@@ -5,6 +5,7 @@
 #include <test/sv2_mock_mining.h>
 
 #include <sync.h>
+#include <streams.h>
 #include <cassert>
 #include <logging.h>
 #include <sv2/messages.h>
@@ -57,7 +58,25 @@ MockBlockTemplate::MockBlockTemplate(std::shared_ptr<MockState> st, uint256 prev
 }
 
 CBlockHeader MockBlockTemplate::getBlockHeader() { return block.GetBlockHeader(); }
-CBlock MockBlockTemplate::getBlock() { return block; }
+CBlock MockBlockTemplate::getBlock()
+{
+    LOCK(state->m);
+    if (!state->get_block_override) return block;
+    CBlock result;
+    SpanReader reader{MakeByteSpan(state->get_block_override->bytes)};
+    reader >> TX_WITH_WITNESS(result);
+    return result;
+}
+
+ipc::Serialized<CBlock> MockBlockTemplate::getSerializedBlock()
+{
+    LOCK(state->m);
+    if (state->get_block_override) return *state->get_block_override;
+    ipc::Serialized<CBlock> result;
+    VectorWriter writer{result.bytes, 0};
+    writer << TX_WITH_WITNESS(block);
+    return result;
+}
 std::vector<CAmount> MockBlockTemplate::getTxFees()
 {
     // The real interface exposes fees per transaction. Tests only need the

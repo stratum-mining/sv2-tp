@@ -7,6 +7,7 @@
 
 #include <consensus/amount.h>
 #include <interfaces/types.h>
+#include <ipc/serialized.h>
 #include <sv2/block_options.h>
 #include <sv2/coinbase_template.h>
 #include <primitives/block.h>
@@ -38,6 +39,10 @@ public:
     virtual CBlockHeader getBlockHeader() = 0;
     // Block contains a dummy coinbase transaction that should not be used.
     virtual CBlock getBlock() = 0;
+
+    //! Return the same block as owned wire bytes, without decoding transactions
+    //! on the IPC event loop.
+    virtual ipc::Serialized<CBlock> getSerializedBlock() = 0;
 
     // Fees per transaction, not including coinbase transaction.
     virtual std::vector<CAmount> getTxFees() = 0;

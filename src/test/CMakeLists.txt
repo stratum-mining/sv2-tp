@@ -40,7 +40,7 @@ PRIVATE
 # generated before compiling tests that include them directly. Only applies
 # when IPC is enabled.
 if(ENABLE_IPC)
-  target_sources(test_sv2 PRIVATE ipc_process_tests.cpp)
+  target_sources(test_sv2 PRIVATE ipc_process_tests.cpp ipc_serialized_tests.cpp)
   if(TARGET bitcoin_ipc_headers)
     add_dependencies(test_sv2 bitcoin_ipc_headers)
   endif()

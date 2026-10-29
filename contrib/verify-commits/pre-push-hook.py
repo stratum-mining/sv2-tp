@@ -20,7 +20,7 @@ def main():
     for line in sys.stdin:
         fields = line.split()
         if len(fields) != 4:
-            continue
+            return reject("malformed pre-push input")
         _local_ref, local_oid, remote_ref, remote_oid = fields
         if remote_ref != "refs/heads/master":
             continue

@@ -4,6 +4,9 @@ Release Process
 Releases are normally prepared on `master`, without release candidates or a
 separate release branch.
 
+Follow the [maintainer guide](maintainer-guide.md) for signing commits,
+adding tree-hash commitments, and verifying pushes to `master`.
+
 ## Versioning and Bitcoin Core compatibility
 
 Versions use `MAJOR.MINOR.PATCH`, with `CLIENT_VERSION_BUILD` holding the patch

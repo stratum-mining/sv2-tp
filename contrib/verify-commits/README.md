@@ -1,10 +1,15 @@
 Tooling for verification of PGP signed commits
 ----------------------------------------------
 
-This is an incomplete work in progress, but currently includes a pre-push hook
-script (`pre-push-hook.sh`) for maintainers to ensure that their own commits
-are PGP signed (nearly always merge commits), as well as a Python 3 script to verify
-commits against a trusted keys list.
+These tools verify maintainer signatures, Tree-SHA512 commitments, and clean
+merges along the first-parent history. Contributor commits brought in by a
+signed merge do not need individual signatures.
+
+The [maintainer guide](../../doc/maintainer-guide.md) documents the merge
+workflow and recommended pre-push hook installation. The hook uses a saved
+copy of the verifier and trust data, rejects deletion or rewriting of `master`,
+and checks pushes to `master` on every remote in the clone. Copying only the
+shell launcher is insufficient; it needs the verifier snapshot alongside it.
 
 
 Using verify-commits.py safely

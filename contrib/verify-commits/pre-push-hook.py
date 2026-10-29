@@ -24,6 +24,9 @@ def main():
         _local_ref, local_oid, remote_ref, remote_oid = fields
         if remote_ref != "refs/heads/master":
             continue
+        if set(local_oid) == {"0"}:
+            return reject("deleting master is not allowed")
+
         print(f"Verifying master candidate {local_oid}...", file=sys.stderr)
         try:
             result = subprocess.run(

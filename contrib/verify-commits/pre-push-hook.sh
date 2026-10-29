@@ -8,12 +8,11 @@ if ! [[ "$2" =~ ^(git@)?(www.)?github.com(:|/)bitcoin/bitcoin(.git)?$ ]]; then
     exit 0
 fi
 
-while read LINE; do
-    set -- A "$LINE"
-    if [ "$4" != "refs/heads/master" ]; then
+while read -r _local_ref local_oid remote_ref _remote_oid; do
+    if [ "$remote_ref" != "refs/heads/master" ]; then
         continue
     fi
-    if ! ./contrib/verify-commits/verify-commits.py "$3" > /dev/null 2>&1; then
+    if ! ./contrib/verify-commits/verify-commits.py "$local_oid" > /dev/null 2>&1; then
         echo "ERROR: A commit is not signed, can't push"
         ./contrib/verify-commits/verify-commits.py
         exit 1

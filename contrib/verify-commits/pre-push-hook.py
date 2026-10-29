@@ -36,6 +36,9 @@ def main():
             return reject(f"cannot load the trusted history: {error}")
         if not trusted_root or trusted_root not in history:
             return reject("the trusted root must be on the first-parent history")
+        if set(remote_oid) != {"0"} and remote_oid not in history:
+            return reject("the remote master tip must remain on the first-parent history")
+
         print(f"Verifying master candidate {local_oid}...", file=sys.stderr)
         try:
             result = subprocess.run(

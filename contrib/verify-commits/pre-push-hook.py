@@ -2,7 +2,7 @@
 # Copyright (c) 2026 The sv2-tp developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
-"""Verify master pushes."""
+"""Guard master pushes using a locally approved verifier snapshot."""
 
 import pathlib
 import subprocess
@@ -15,7 +15,8 @@ def reject(message):
 
 
 def main():
-    verifier_dir = pathlib.Path("contrib/verify-commits")
+    # This script is installed alongside the trusted verifier and its data.
+    verifier_dir = pathlib.Path(__file__).resolve().parent
     for line in sys.stdin:
         fields = line.split()
         if len(fields) != 4:

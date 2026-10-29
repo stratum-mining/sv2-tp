@@ -27,6 +27,15 @@ def main():
         if set(local_oid) == {"0"}:
             return reject("deleting master is not allowed")
 
+        try:
+            trusted_root = (verifier_dir / "trusted-git-root").read_text().strip()
+            history = subprocess.check_output(
+                ["git", "rev-list", "--first-parent", local_oid], text=True
+            ).splitlines()
+        except (OSError, subprocess.CalledProcessError) as error:
+            return reject(f"cannot load the trusted history: {error}")
+        if not trusted_root or trusted_root not in history:
+            return reject("the trusted root must be on the first-parent history")
         print(f"Verifying master candidate {local_oid}...", file=sys.stderr)
         try:
             result = subprocess.run(

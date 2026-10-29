@@ -2,10 +2,9 @@
 # Copyright (c) 2026 The sv2-tp developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
-"""Verify Bitcoin Core master pushes."""
+"""Verify master pushes."""
 
 import pathlib
-import re
 import subprocess
 import sys
 
@@ -16,10 +15,6 @@ def reject(message):
 
 
 def main():
-    remote_url = sys.argv[2] if len(sys.argv) > 2 else ""
-    if not re.fullmatch(r"(git@)?(www.)?github.com(:|/)bitcoin/bitcoin(.git)?", remote_url):
-        return 0
-
     verifier_dir = pathlib.Path("contrib/verify-commits")
     for line in sys.stdin:
         fields = line.split()

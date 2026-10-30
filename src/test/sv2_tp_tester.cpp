@@ -84,6 +84,8 @@ TPTester::TPTester() : TPTester(Sv2TemplateProviderOptions{.is_test = true}) {}
 TPTester::TPTester(Sv2TemplateProviderOptions opts, MockNodeVersion version)
     : m_tp_options{opts}, m_state{std::make_shared<MockState>()}, m_mining_control{std::make_shared<MockMining>(m_state)}
 {
+    m_state->return_submitted_block = version == MockNodeVersion::CURRENT;
+
     // Start cap'n proto event loop on a background thread
     std::promise<mp::EventLoop*> loop_ready;
     m_loop_thread = std::thread([&] {

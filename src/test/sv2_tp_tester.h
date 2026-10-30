@@ -32,6 +32,8 @@ struct MockInit;
 enum class MockNodeVersion : uint8_t {
     //! Has getTransactionsByTxID() and submitSolution() with reason and debug.
     CURRENT,
+    //! Bitcoin Core v32: omits the submitted-block reply field.
+    V32,
     //! Bitcoin Core v31: has neither.
     V31,
 };

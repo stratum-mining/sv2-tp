@@ -1,5 +1,10 @@
 #include <boost/test/unit_test.hpp>
 #include <consensus/consensus.h>
+#include <consensus/merkle.h>
+#include <common/args.h>
+#include <streams.h>
+#include <util/fs.h>
+#include <util/readwritefile.h>
 #include <interfaces/init.h>
 #include <interfaces/mining.h>
 #include <ipc/exception.h>
@@ -297,9 +302,11 @@ BOOST_AUTO_TEST_CASE(submit_solution_interface_version)
         const char* description;
         int expected_calls;      // calls to submitSolution()
         int expected_old7_calls; // calls to submitSolutionOld7()
+        int expected_version;
     } cases[]{
-        {MockNodeVersion::CURRENT, "Simulate a recent node", 1, 0},
-        {MockNodeVersion::V31, "Simulate a Bitcoin Core v31 node", 0, 1},
+        {MockNodeVersion::CURRENT, "Simulate a v33 node", 1, 0, NODE_VERSION_33_00},
+        {MockNodeVersion::V32, "Simulate a Bitcoin Core v32 node", 1, 0, NODE_VERSION_32_00},
+        {MockNodeVersion::V31, "Simulate a Bitcoin Core v31 node", 0, 1, NODE_VERSION_31_0},
     };
 
     for (const auto& test_case : cases) {
@@ -322,11 +329,58 @@ BOOST_AUTO_TEST_CASE(submit_solution_interface_version)
 
         BOOST_CHECK_EQUAL(tester.m_state->submit_solution_calls.load(), test_case.expected_calls);
         BOOST_CHECK_EQUAL(tester.m_state->submit_solution_old7_calls.load(), test_case.expected_old7_calls);
+        BOOST_CHECK_EQUAL(tester.m_tp->GetNodeVersion(), test_case.expected_version);
 
         // Let the sv2-saveblk thread finish, it uses the IPC connection.
         UninterruptibleSleep(std::chrono::milliseconds{1000});
 
         tester.m_mining_control->Shutdown();
+    }
+}
+
+// Accepted and rejected solutions must both be saved exactly. A v33 reply
+// supplies the snapshot; a v32 reply omits it and needs delayed getBlock().
+BOOST_AUTO_TEST_CASE(save_submitted_solution)
+{
+    fs::create_directories(gArgs.GetDataDirNet());
+    for (const auto version : {MockNodeVersion::CURRENT, MockNodeVersion::V32}) {
+        for (const bool reject : {false, true}) {
+            TPTester tester{Sv2TemplateProviderOptions{.is_test = true}, version};
+            tester.handshake();
+            tester.SendSetupConnection();
+            tester.SendCoinbaseOutputConstraints();
+            const uint64_t template_id = tester.ReceiveTemplatePair();
+            tester.m_state->reject_solution = reject;
+
+            auto reference = tester.m_mining_proxy->createNewBlock({}, false);
+            CBlock expected = reference->getBlock();
+            const int get_block_calls = tester.m_state->get_block_calls;
+            node::Sv2SubmitSolutionMsg solution;
+            solution.m_template_id = template_id;
+            solution.m_version = 42;
+            solution.m_ntime = 123456;
+            solution.m_nonce = reject ? 8 : 9;
+            solution.m_coinbase_tx = CMutableTransaction{*MakeDummyTx()};
+            expected.nVersion = solution.m_version;
+            expected.nTime = solution.m_ntime;
+            expected.nNonce = solution.m_nonce;
+            expected.vtx[0] = MakeTransactionRef(solution.m_coinbase_tx);
+            expected.hashMerkleRoot = BlockMerkleRoot(expected);
+
+            tester.m_tp->SubmitSolution(solution);
+            BOOST_CHECK_EQUAL(tester.m_tp->GetNodeVersion(), version == MockNodeVersion::CURRENT ? NODE_VERSION_33_00 : NODE_VERSION_32_00);
+            const auto path = gArgs.GetDataDirNet() / fs::PathFromString(expected.GetHash().ToString() + ".dat");
+            // Finish the detached writer before destroying its IPC connection.
+            UninterruptibleSleep(std::chrono::milliseconds{1000});
+            const auto [ok, bytes] = ReadBinaryFile(path);
+            BOOST_REQUIRE(ok);
+            DataStream serialized;
+            serialized << TX_WITH_WITNESS(expected);
+            BOOST_CHECK_EQUAL(bytes, std::string(reinterpret_cast<const char*>(serialized.data()), serialized.size()));
+            BOOST_CHECK_EQUAL(tester.m_state->get_block_calls.load(), get_block_calls + (version == MockNodeVersion::V32 ? 1 : 0));
+            fs::remove(path);
+            tester.m_mining_control->Shutdown();
+        }
     }
 }
 

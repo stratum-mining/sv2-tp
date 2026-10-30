@@ -27,6 +27,8 @@ class CBlock;
 static constexpr int NODE_VERSION_31_0{310000};
 //! Bitcoin Core v32.0 mining interface. The node may be newer.
 static constexpr int NODE_VERSION_32_00{320000};
+//! Mining interface that returns a block snapshot in the submission reply.
+static constexpr int NODE_VERSION_33_00{330000};
 
 struct Sv2TemplateProviderOptions
 {
@@ -224,8 +226,8 @@ private:
     /* Forget templates from before the last block, but with a few seconds margin. */
     void PruneBlockTemplateCache() EXCLUSIVE_LOCKS_REQUIRED(m_tp_mutex);
 
-    /** Serialize and write a block to disk asynchronously after a short delay, using the provided template. */
-    void SaveBlockAsync(std::shared_ptr<BlockTemplate> block_template, bool submitted);
+    /** Serialize and write a block to disk asynchronously after a short delay, using a returned block or a legacy template. */
+    void SaveBlockAsync(std::shared_ptr<BlockTemplate> block_template, bool submitted, std::optional<CBlock> block);
 
     /**
      * Sends the best NewTemplate and SetNewPrevHash to a client.

@@ -663,6 +663,7 @@ void Sv2TemplateProvider::SubmitSolution(node::Sv2SubmitSolutionMsg solution)
         const CTransactionRef coinbase_tx{MakeTransactionRef(solution.m_coinbase_tx)};
         std::string reason, debug;
         bool submitted{false};
+        std::optional<CBlock> submitted_block;
 
         if (m_node_version < NODE_VERSION_32_00) {
             submitted = block_template->submitSolutionOld7(solution.m_version,
@@ -670,12 +671,16 @@ void Sv2TemplateProvider::SubmitSolution(node::Sv2SubmitSolutionMsg solution)
                                                            solution.m_nonce,
                                                            coinbase_tx);
         } else {
-            submitted = block_template->submitSolution(solution.m_version,
+            submitted_block = block_template->submitSolution(solution.m_version,
                                                        solution.m_ntime,
                                                        solution.m_nonce,
                                                        coinbase_tx,
                                                        reason,
-                                                       debug);
+                                                       debug,
+                                                       submitted);
+            // An omitted field identifies the older reply without an extra
+            // probe or a direct node-version query. Rejected blocks count too.
+            if (submitted_block) m_node_version = NODE_VERSION_33_00;
         }
 
         if (!submitted) {
@@ -684,26 +689,26 @@ void Sv2TemplateProvider::SubmitSolution(node::Sv2SubmitSolutionMsg solution)
                        debug.empty() ? std::string{} : strprintf(" (%s)", debug));
         }
 
-        SaveBlockAsync(block_template, submitted);
+        SaveBlockAsync(block_template, submitted, std::move(submitted_block));
 }
 
-void Sv2TemplateProvider::SaveBlockAsync(std::shared_ptr<BlockTemplate> block_template, bool submitted)
+void Sv2TemplateProvider::SaveBlockAsync(std::shared_ptr<BlockTemplate> block_template, bool submitted, std::optional<CBlock> block)
 {
-    // Briefly wait (so we can focus on the next template) and then fetch and
-    // store the block for debugging purposes.
+    // Keep disk writes off the template-delivery path. Newer nodes already
+    // returned an owned block, even on rejection. Older nodes need getBlock().
     std::thread(&util::TraceThread, "sv2-saveblk",
-                [block_template = std::move(block_template), submitted]() mutable {
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                [block_template = std::move(block_template), submitted, block = std::move(block)]() mutable {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
         try {
             // Retrieve block after delay
-            const CBlock block{block_template->getBlock()};
-            const uint256 block_hash = block.GetHash();
+            if (!block) block = block_template->getBlock();
+            const uint256 block_hash = block->GetHash();
             const fs::path out_path = gArgs.GetDataDirNet() / (block_hash.ToString() + ".dat").c_str();
 
             // Serialize block including witness data
             std::vector<unsigned char> block_data;
             VectorWriter writer{block_data, 0};
-            writer << TX_WITH_WITNESS(block);
+            writer << TX_WITH_WITNESS(*block);
             const std::string bytes{reinterpret_cast<const char*>(block_data.data()), block_data.size()};
 
             if (!WriteBinaryFile(out_path, bytes)) {

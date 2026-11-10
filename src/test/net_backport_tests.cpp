@@ -105,6 +105,19 @@ BOOST_AUTO_TEST_CASE(wait_timeout_does_not_wrap)
 BOOST_AUTO_TEST_CASE(exception_monitoring_requires_receive)
 {
     TcpPair pair;
+#ifdef __APPLE__
+    // On macOS, urgent data at the start of a TCP stream can fail to trigger
+    // exceptional readiness. Exchange a normal byte before sending urgent data.
+    const char initial_byte{'x'};
+    BOOST_REQUIRE_EQUAL(pair.client->Send(&initial_byte, 1, MSG_NOSIGNAL), 1);
+    Sock::Event initial_occurred{0};
+    BOOST_REQUIRE(pair.server->Wait(1s, Sock::RecvEvent, &initial_occurred));
+    BOOST_REQUIRE(initial_occurred & Sock::RecvEvent);
+    char initial_received{};
+    BOOST_REQUIRE_EQUAL(pair.server->Recv(&initial_received, 1, 0), 1);
+    BOOST_REQUIRE_EQUAL(initial_received, initial_byte);
+#endif
+
     const char urgent{'!'};
     BOOST_REQUIRE_EQUAL(pair.client->Send(&urgent, 1, MSG_OOB | MSG_NOSIGNAL), 1);
 

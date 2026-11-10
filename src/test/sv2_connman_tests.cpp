@@ -5,6 +5,8 @@
 #include <test/sv2_test_setup.h>
 #include <util/time.h>
 
+#include <array>
+
 BOOST_FIXTURE_TEST_SUITE(sv2_connman_tests, Sv2BasicTestingSetup)
 
 BOOST_AUTO_TEST_CASE(connection_limit)
@@ -292,8 +294,35 @@ BOOST_AUTO_TEST_CASE(setup_connection_validation)
                 /*expected_flags=*/1, "unsupported-protocol");
     check_error(node::TEMPLATE_DISTRIBUTION_PROTOCOL, /*min_version=*/3, /*max_version=*/2, /*flags=*/2,
                 /*expected_flags=*/2, "protocol-version-mismatch");
+    check_error(node::TEMPLATE_DISTRIBUTION_PROTOCOL, /*min_version=*/1, /*max_version=*/1, /*flags=*/0,
+                /*expected_flags=*/0, "protocol-version-mismatch");
+    check_error(node::TEMPLATE_DISTRIBUTION_PROTOCOL, /*min_version=*/4, /*max_version=*/5, /*flags=*/0,
+                /*expected_flags=*/0, "protocol-version-mismatch");
     check_error(node::TEMPLATE_DISTRIBUTION_PROTOCOL, /*min_version=*/2, /*max_version=*/2, /*flags=*/0x80000001,
                 /*expected_flags=*/0x80000001, "unsupported-feature-flags");
+}
+
+BOOST_AUTO_TEST_CASE(setup_connection_protocol_version)
+{
+    for (const auto& [min_version, max_version, expected_version] : {
+             std::array<uint16_t, 3>{2, 2, 2},
+             {1, 2, 2},
+             {2, 4, 2}}) {
+        ConnTester tester{};
+        tester.handshake();
+        node::Sv2NetMsg setup{tester.SetupConnectionMsg(node::TEMPLATE_DISTRIBUTION_PROTOCOL, min_version, max_version)};
+        tester.RemoteToLocalMsg(setup);
+        const auto [response, bytes]{tester.LocalToRemoteMsg()};
+        const node::Sv2NetMsg expected{node::Sv2SetupConnectionSuccessMsg{expected_version, 0}};
+        BOOST_REQUIRE(response.m_msg_type == expected.m_msg_type);
+        BOOST_CHECK(response.m_msg == expected.m_msg);
+        BOOST_CHECK(tester.IsFullyConnected());
+        LOCK(tester.m_connman->m_clients_mutex);
+        const auto client{tester.m_connman->GetClientById(0)};
+        BOOST_REQUIRE(client);
+        LOCK(client->cs_status);
+        BOOST_CHECK_EQUAL(client->m_protocol_version, expected_version);
+    }
 }
 
 // Only CoinbaseOutputConstraints that pass validation make a client ready for

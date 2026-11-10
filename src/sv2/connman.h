@@ -34,6 +34,9 @@ struct Sv2Client
      */
     bool m_setup_connection_confirmed GUARDED_BY(cs_status) = false;
 
+    /** Protocol version selected by SetupConnection; zero until setup succeeds. */
+    uint16_t m_protocol_version GUARDED_BY(cs_status){0};
+
     /**
      * Whether the client is a candidate for disconnection. The client's socket will be
      * closed after all queued messages have been sent.
@@ -115,12 +118,6 @@ class Sv2Connman : SockMan
 private:
     /** Interface to pass events up */
     Sv2EventsInterface* m_msgproc;
-
-    /**
-     * The Stratum V2 spec version supported by the server. The protocol remains
-     * Stratum V2 regardless of this value.
-     */
-    const uint16_t m_protocol_version = 2;
 
     /**
      * Flags accepted from Template Distribution Protocol clients. The protocol

@@ -9,6 +9,8 @@
 #include <sync.h>
 #include <util/thread.h>
 
+#include <algorithm>
+
 using node::Sv2MsgType;
 
 Sv2Connman::~Sv2Connman()
@@ -338,7 +340,8 @@ void Sv2Connman::ProcessSv2Message(const Sv2NetMsg& sv2_net_msg, Sv2Client& clie
         }
 
         // Disconnect a client if they are not running a compatible protocol version.
-        if ((m_protocol_version < setup_conn.m_min_version) || (m_protocol_version > setup_conn.m_max_version)) {
+        const uint16_t used_version{std::min(setup_conn.m_max_version, node::TEMPLATE_DISTRIBUTION_MAX_VERSION)};
+        if (used_version < setup_conn.m_min_version || used_version < node::TEMPLATE_DISTRIBUTION_MIN_VERSION) {
             node::Sv2SetupConnectionErrorMsg setup_conn_err{unsupported_flags, std::string{"protocol-version-mismatch"}};
             LogPrintLevel(BCLog::SV2, BCLog::Level::Debug, "Send 0x02 SetupConnection.Error to client id=%zu\n",
                           client.m_id);
@@ -368,10 +371,11 @@ void Sv2Connman::ProcessSv2Message(const Sv2NetMsg& sv2_net_msg, Sv2Client& clie
 
         LogPrintLevel(BCLog::SV2, BCLog::Level::Debug, "Send 0x01 SetupConnection.Success to client id=%zu\n",
                       client.m_id);
-        node::Sv2SetupConnectionSuccessMsg setup_success{m_protocol_version, m_required_flags};
+        node::Sv2SetupConnectionSuccessMsg setup_success{used_version, m_required_flags};
         client.m_send_messages.emplace_back(setup_success);
 
         LOCK(client.cs_status);
+        client.m_protocol_version = used_version;
         client.m_setup_connection_confirmed = true;
 
         break;

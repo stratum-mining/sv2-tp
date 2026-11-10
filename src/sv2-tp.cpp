@@ -16,6 +16,7 @@
 #include <ipc/context.h>
 #include <ipc/exception.h>
 #include <logging.h>
+#include <netbase.h>
 #include <sv2/template_provider.h>
 #include <tinyformat.h>
 #include <util/chaintype.h>
@@ -239,6 +240,10 @@ MAIN_FUNCTION
         if (sv2_bind) {
             if (!SplitHostPort(sv2_bind.value(), options.port, options.host)) {
                 tfm::format(std::cerr, "Invalid port %d\n", options.port);
+                return EXIT_FAILURE;
+            }
+            if (!Lookup(options.host, options.port, /*fAllowLookup=*/false)) {
+                tfm::format(std::cerr, "Error: -sv2bind address must be a numeric IP address: %s\n", options.host);
                 return EXIT_FAILURE;
             }
         }

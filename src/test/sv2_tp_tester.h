@@ -74,15 +74,15 @@ public:
     /** Connect (or reconnect) peer and perform the noise handshake. */
     void handshake(size_t peer_id = 0);
     void receiveMessage(Sv2NetMsg& msg, size_t peer_id = 0);
-    Sv2NetMsg SetupConnectionMsg();
+    Sv2NetMsg SetupConnectionMsg(uint16_t max_version = node::TEMPLATE_DISTRIBUTION_MAX_VERSION);
     size_t GetBlockTemplateCount();
 
     /** Send SetupConnection and verify Success reply. */
-    void SendSetupConnection(size_t peer_id = 0);
+    void SendSetupConnection(size_t peer_id = 0, uint16_t max_version = node::TEMPLATE_DISTRIBUTION_MAX_VERSION);
     /** Send CoinbaseOutputConstraints message. */
     void SendCoinbaseOutputConstraints(size_t peer_id = 0, uint32_t max_additional_size = 1);
     /** Receive a NewTemplate + SetNewPrevHash pair and verify sizes and matching IDs. Returns the template ID. */
-    uint64_t ReceiveTemplatePair(size_t peer_id = 0);
+    uint64_t ReceiveTemplatePair(size_t peer_id = 0, uint16_t protocol_version = node::TEMPLATE_DISTRIBUTION_MAX_VERSION);
 
     // SV2 message payload sizes used for test verification
     static constexpr size_t SV2_SET_NEW_PREV_HASH_MSG_SIZE =

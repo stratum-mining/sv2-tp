@@ -248,29 +248,37 @@ BOOST_AUTO_TEST_CASE(Sv2NewTemplate_CoinbaseWitness_test)
 
         // Fields through coinbase_tx_value_remaining.
         std::string expected{"01000000000000000001000000020000000100ffffffff00f2052a01000000"};
+        std::string witness_encoding{"00"};
         if (witness_hex.empty()) {
-            // Zero outputs, empty B0_64K, then OPTION[U256] count 0.
-            expected += "00000000000000";
+            // Zero outputs and empty B0_64K.
+            expected += "000000000000";
         } else {
             coinbase_tx.vin[0].scriptWitness.stack.push_back(ParseHex(witness_hex));
             const auto commitment{ParseHex("aa21a9ed" + std::string(64, '0'))};
             coinbase_tx.vout.emplace_back(0, CScript() << OP_RETURN << commitment);
-            // One 47-byte output, followed by OPTION[U256] count 1 and its value.
+            // One 47-byte output.
             expected += "010000002f000000000000000000266a24aa21a9ed" + std::string(64, '0');
-            expected += "01" + witness_hex;
+            witness_encoding = "01" + witness_hex;
         }
+        const std::string legacy_expected{expected + "1234567800"};
         // Locktime and empty merkle path follow the witness.
-        expected += "1234567800";
+        expected += witness_encoding + "1234567800";
 
         CBlockHeader header;
         header.nVersion = 1;
         const auto coinbase_ref{MakeTransactionRef(coinbase_tx)};
-        for (const auto& new_template : {
+        for (auto new_template : {
                  node::Sv2NewTemplateMsg{header, coinbase_ref, {}, 1, false},
                  node::Sv2NewTemplateMsg{header, ExtractCoinbaseTx(coinbase_ref), {}, 1, false}}) {
             DataStream ss{};
             ss << new_template;
             BOOST_CHECK_EQUAL(HexStr(ss), expected);
+
+            // Version 2 has no witness field, including its option count.
+            new_template.m_protocol_version = 2;
+            DataStream legacy{};
+            legacy << new_template;
+            BOOST_CHECK_EQUAL(HexStr(legacy), legacy_expected);
         }
     }
 }

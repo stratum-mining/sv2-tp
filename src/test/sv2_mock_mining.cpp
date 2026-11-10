@@ -31,7 +31,8 @@ MockBlockTemplate::MockBlockTemplate(std::shared_ptr<MockState> st, uint256 prev
     cb.vin.resize(1);
     cb.vin[0].prevout.SetNull();
     cb.vin[0].scriptSig = CScript() << OP_0;
-    cb.vin[0].scriptWitness.stack.emplace_back(32, 0);
+    AssertLockHeld(state->m);
+    cb.vin[0].scriptWitness.stack.emplace_back(state->coinbase_witness.begin(), state->coinbase_witness.end());
 
     cb.vout.resize(3);
     // Output 0: Dummy anyone-can-spend output with full reward (will be filtered out by sv2-tp)
@@ -90,7 +91,7 @@ std::unique_ptr<interfaces::BlockTemplate> MockBlockTemplate::waitNext(node::Blo
 {
     auto deadline = std::chrono::steady_clock::now() +
                     std::chrono::milliseconds{static_cast<int64_t>(options.timeout.count())};
-    std::unique_lock<Mutex> lk(state->m);
+    WAIT_LOCK(state->m, lk);
     struct WaitNextWaiter {
         explicit WaitNextWaiter(MockState& state) : m_state(state)
         {

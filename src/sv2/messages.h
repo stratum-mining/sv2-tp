@@ -29,7 +29,7 @@ namespace node {
 static constexpr uint8_t TEMPLATE_DISTRIBUTION_PROTOCOL{0x02};
 /** Supported spec versions for Template Distribution connections. */
 static constexpr uint16_t TEMPLATE_DISTRIBUTION_MIN_VERSION{2};
-static constexpr uint16_t TEMPLATE_DISTRIBUTION_MAX_VERSION{2};
+static constexpr uint16_t TEMPLATE_DISTRIBUTION_MAX_VERSION{3};
 
 /**
  * A type used as the message length field in stratum v2 messages.
@@ -250,6 +250,9 @@ struct Sv2SetupConnectionErrorMsg
  */
 struct Sv2NewTemplateMsg
 {
+    /** Negotiated protocol version used for serialization; not a wire field. */
+    uint16_t m_protocol_version{TEMPLATE_DISTRIBUTION_MAX_VERSION};
+
     /**
      * The default message type value for this Stratum V2 message.
      */
@@ -360,10 +363,12 @@ struct Sv2NewTemplateMsg
             s << static_cast<uint16_t>(0);
         }
 
-        // OPTION[U256] is encoded as a one-byte element count followed by the
-        // value when present.
-        s << uint8_t{m_coinbase_witness.has_value()};
-        if (m_coinbase_witness.has_value()) s << *m_coinbase_witness;
+        // Version 3 adds coinbase_witness. OPTION[U256] has a one-byte element
+        // count followed by the value when present.
+        if (m_protocol_version >= 3) {
+            s << uint8_t{m_coinbase_witness.has_value()};
+            if (m_coinbase_witness.has_value()) s << *m_coinbase_witness;
+        }
 
         s << m_coinbase_tx_locktime
           // Technically using VARINT is a problem for a merkle path longer

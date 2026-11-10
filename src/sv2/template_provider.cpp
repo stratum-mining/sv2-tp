@@ -744,11 +744,20 @@ bool Sv2TemplateProvider::SendWork(Sv2Client& client, uint64_t template_id, Bloc
     CBlockHeader header{block_template.getBlockHeader()};
     node::CoinbaseTx coinbase{block_template.getCoinbaseTx()};
 
+    const uint16_t protocol_version{WITH_LOCK(client.cs_status, return client.m_protocol_version)};
+    if (protocol_version < 3 && coinbase.witness && !coinbase.witness->IsNull()) {
+        LogPrintLevel(BCLog::SV2, BCLog::Level::Error,
+                      "Cannot send a nonzero coinbase witness to client id=%zu using protocol version %u\n",
+                      client.m_id, protocol_version);
+        return false;
+    }
+
     node::Sv2NewTemplateMsg new_template{header,
                                          coinbase,
                                          block_template.getCoinbaseMerklePath(),
                                          template_id,
                                          future_template};
+    new_template.m_protocol_version = protocol_version;
 
     LogPrintLevel(BCLog::SV2, BCLog::Level::Debug, "Send 0x71 NewTemplate id=%lu future=%d to client id=%zu\n", template_id, future_template, client.m_id);
     {

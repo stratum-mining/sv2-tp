@@ -27,6 +27,7 @@ node::Sv2NewTemplateMsg::Sv2NewTemplateMsg(const CBlockHeader& header, const nod
     }
     m_coinbase_tx_outputs_count = coinbase.required_outputs.size();
 
+    m_coinbase_witness = coinbase.witness;
     m_coinbase_tx_locktime = coinbase.lock_time;
 
     for (const auto& hash : coinbase_merkle_path) {

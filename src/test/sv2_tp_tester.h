@@ -101,6 +101,7 @@ public:
         8 +                 // coinbase_tx_value_remaining
         4 +                 // coinbase_tx_outputs_count
         2 + 56 +            // B0_64K: length prefix (2 bytes) + 2 outputs (witness commitment 43 bytes + merge mining 13 bytes)
+        1 + 32 +            // coinbase_witness (OPTION[U256] count + value)
         4 +                 // coinbase_tx_locktime
         1;                  // merkle_path count (CompactSize(0))
 };

@@ -1122,7 +1122,11 @@ Release notes should be written for any PR that:
 
 Release notes should be added to a PR-specific release note file at
 `/doc/release-notes-<PR number>.md` to avoid conflicts between multiple PRs.
-All `release-notes*` files are merged into a single `release-notes-<version>.md` file prior to the release.
+During release preparation, consolidate the PR-specific notes into
+`/doc/release-notes.md`. After tagging, move the released notes unchanged into
+`/doc/release-notes-history.md`, keeping historical entries newest first, and
+reset `release-notes.md` to boilerplate in the development-version bump commit.
+See the [release process](release-process.md#prepare-and-tag).
 
 ## Internal interface guidelines
 

@@ -52,12 +52,11 @@ number in [CMakeLists.txt](../CMakeLists.txt).
 1. Start from a clean `master` and choose the release version using the rules
    above. The patch number is normally already set by the previous release's
    development-version bump.
-2. Update [doc/release-notes.md](release-notes.md) for this release, using the
+2. Fill in the boilerplate in [doc/release-notes.md](release-notes.md), using the
    changes since the previous release tag. Summarize notable changes, link the
    relevant PRs, credit contributors, and explain Core compatibility and upgrade
    requirements. Update the README if compatibility or usage has changed.
-   Previous notes remain available through release tags and GitHub releases;
-   no wiki or separate archive copies are needed.
+   Keep a link to the historical notes in the current release notes.
 3. Set the chosen version in `CMakeLists.txt` and set
    `CLIENT_VERSION_IS_RELEASE` to `true`. Configure and rebuild locally:
 
@@ -90,10 +89,18 @@ number in [CMakeLists.txt](../CMakeLists.txt).
 
    Publish the release tag for builders to fetch. Build from this tag throughout
    the remaining steps.
-6. On `master`, increment `CLIENT_VERSION_BUILD` and set
-   `CLIENT_VERSION_IS_RELEASE` back to `false`. Commit with subject
+6. After tagging, on `master`, move the released notes unchanged to the top of
+   [doc/release-notes-history.md](release-notes-history.md), below its
+   introduction, keeping historical entries newest first. Reset
+   `doc/release-notes.md` to boilerplate: a generic `Release notes` title,
+   section headings, the `Excluding backports` contributor qualifier, and
+   the standard history and Guix signature links. Remove all release-specific
+   content, including upgrade instructions, compatibility details, changes,
+   and contributor names.
+   In the same commit, increment `CLIENT_VERSION_BUILD` and set
+   `CLIENT_VERSION_IS_RELEASE` back to `false`. Use the subject
    `build: unset release flag and bump patch version`. This development commit
-   is not part of the tagged release.
+   contains the notes cleanup and is not part of the tagged release.
 
 ## Building
 

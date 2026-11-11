@@ -1,19 +1,27 @@
 WINDOWS BUILD NOTES
 ====================
 
+Windows is not currently supported by sv2-tp. These instructions were
+inherited from Bitcoin Core and are retained as reference for the work in
+[PR #93](https://github.com/stratum-mining/sv2-tp/pull/93).
+
 Below are some notes on how to build Bitcoin Core for Windows.
 
 The options known to work for building Bitcoin Core on Windows are:
 
 * On Linux, using the [Mingw-w64](https://www.mingw-w64.org/) cross compiler tool chain.
 * On Windows, using [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/about) and Mingw-w64.
-* On Windows, using [Microsoft Visual Studio](https://visualstudio.microsoft.com). See [`build-windows-msvc.md`](./build-windows-msvc.md).
+
+Native Visual Studio builds are not maintained; see
+[`build-windows-msvc.md`](./build-windows-msvc.md) for toolchain status.
 
 Other options which may work, but which have not been extensively tested are (please contribute instructions):
 
 * On Windows, using a POSIX compatibility layer application such as [cygwin](https://www.cygwin.com/) or [msys2](https://www.msys2.org/).
 
-The instructions below work on Ubuntu and Debian. Make sure the distribution's `g++-mingw-w64-x86-64-posix`
+The instructions below describe upstream cross-compilation on Ubuntu and
+Debian and have not been validated for sv2-tp. Make sure the distribution's
+`g++-mingw-w64-ucrt64`
 package meets the minimum required `g++` version specified in [dependencies.md](dependencies.md).
 
 Installing Windows Subsystem for Linux
@@ -34,7 +42,7 @@ dependencies to install and [dependencies.md](dependencies.md) for a complete ov
 Acquire the source in the usual way:
 
     git clone https://github.com/stratum-mining/sv2-tp.git
-    cd bitcoin
+    cd sv2-tp
 
 Note that for WSL the Bitcoin Core source path MUST be somewhere in the default mount file system, for
 example /usr/src/bitcoin, AND not under /mnt/d/. If this is not the case the dependency autoconf scripts will fail.
@@ -42,8 +50,8 @@ This means you cannot use a directory that is located directly on the host Windo
 
 Build using:
 
-    gmake -C depends HOST=x86_64-w64-mingw32  # Append "-j N" for N parallel jobs.
-    cmake -B build --toolchain depends/x86_64-w64-mingw32/toolchain.cmake
+    gmake -C depends HOST=x86_64-w64-mingw32ucrt  # Append "-j N" for N parallel jobs.
+    cmake -B build --toolchain depends/x86_64-w64-mingw32ucrt/toolchain.cmake
     cmake --build build     # Append "-j N" for N parallel jobs.
 
 ## Depends system
@@ -67,7 +75,4 @@ if you do not need the debug information, you can prune it during install by cal
 cmake --install build --prefix /mnt/c/workspace/bitcoin --strip
 ```
 
-You can also create an installer using:
-```shell
-cmake --build build --target deploy
-```
+SV2-TP does not build a Windows installer.

@@ -70,7 +70,6 @@ int TokenPipeEnd::TokenRead()
             return token;
         }
     }
-    return token;
 }
 
 void TokenPipeEnd::Close()

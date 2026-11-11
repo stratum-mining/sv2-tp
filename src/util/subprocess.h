@@ -120,12 +120,12 @@ namespace subprocess {
 
 // Max buffer size allocated on stack for read error
 // from pipe
-static const size_t SP_MAX_ERR_BUF_SIZ = 1024;
+inline constexpr size_t SP_MAX_ERR_BUF_SIZ = 1024;
 
 // Default buffer capacity for OutBuffer and ErrBuffer.
 // If the data exceeds this capacity, the buffer size is grown
 // by 1.5 times its previous capacity
-static const size_t DEFAULT_BUF_CAP_BYTES = 8192;
+inline constexpr size_t DEFAULT_BUF_CAP_BYTES = 8192;
 
 
 /*-----------------------------------------------
@@ -1146,7 +1146,7 @@ inline void Popen::execute_process() noexcept(false)
                             NULL,         // process security attributes
                             NULL,         // primary thread security attributes
                             TRUE,         // handles are inherited
-                            creation_flags,	// creation flags
+                            creation_flags, // creation flags
                             NULL,         // use parent's environment
                             NULL,         // use parent's current directory
                             &siStartInfo, // STARTUPINFOW pointer
@@ -1237,7 +1237,7 @@ inline void Popen::execute_process() noexcept(false)
         // Throw whatever information we have about child failure
         throw CalledProcessError(err_buf, retcode);
       }
-    } catch (std::exception& exp) {
+    } catch (std::exception&) {
       stream_.cleanup_fds();
       throw;
     }

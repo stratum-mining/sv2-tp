@@ -1,5 +1,6 @@
 freebsd_CFLAGS=
 freebsd_CXXFLAGS=
+freebsd_LDFLAGS=
 
 freebsd_release_CFLAGS=-O2
 freebsd_release_CXXFLAGS=$(freebsd_release_CFLAGS)

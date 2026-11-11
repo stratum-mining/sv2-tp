@@ -16,8 +16,8 @@
 #include <optional>
 #include <vector>
 
-const unsigned int BIP32_EXTKEY_SIZE = 74;
-const unsigned int BIP32_EXTKEY_WITH_VERSION_SIZE = 78;
+inline constexpr unsigned int BIP32_EXTKEY_SIZE = 74;
+inline constexpr unsigned int BIP32_EXTKEY_WITH_VERSION_SIZE = 78;
 
 /** A reference to a CKey: the Hash160 of its serialized public key */
 class CKeyID : public uint160

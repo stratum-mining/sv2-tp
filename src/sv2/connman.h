@@ -15,7 +15,7 @@
 #include <threadsafety.h>
 #include <utility>
 
-static constexpr size_t DEFAULT_MAX_SV2_CONNECTIONS{16};
+inline constexpr size_t DEFAULT_MAX_SV2_CONNECTIONS{16};
 
 struct Sv2Client
 {

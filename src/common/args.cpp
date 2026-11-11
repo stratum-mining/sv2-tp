@@ -513,9 +513,10 @@ std::string ArgsManager::GetHelpMessage() const
             case OptionsCategory::CLI_COMMANDS:
                 usage += HelpMessageGroup("CLI Commands:");
                 break;
-            default:
+            case OptionsCategory::HIDDEN:
+            case OptionsCategory::WALLET_DEBUG_TEST:
                 break;
-        }
+        } // no default case, so the compiler can warn about missing cases
 
         for (const auto& arg : arg_map.second) {
             if (arg.second.m_flags & ArgsManager::DEBUG_ONLY) continue;

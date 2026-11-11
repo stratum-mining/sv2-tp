@@ -24,9 +24,9 @@ class CBlock;
  * has, so these are the oldest version that could be on the other end.
  */
 //! Bitcoin Core v31.0, the oldest release we support
-static constexpr int NODE_VERSION_31_0{310000};
+inline constexpr int NODE_VERSION_31_0{310000};
 //! Bitcoin Core v32.0 mining interface. The node may be newer.
-static constexpr int NODE_VERSION_32_00{320000};
+inline constexpr int NODE_VERSION_32_00{320000};
 
 struct Sv2TemplateProviderOptions
 {

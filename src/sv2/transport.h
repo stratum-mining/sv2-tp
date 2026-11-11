@@ -10,8 +10,8 @@
 #include <sv2/noise.h>
 #include <sync.h>
 
-static constexpr size_t SV2_HEADER_PLAIN_SIZE{6};
-static constexpr size_t SV2_HEADER_ENCRYPTED_SIZE{SV2_HEADER_PLAIN_SIZE + Poly1305::TAGLEN};
+inline constexpr size_t SV2_HEADER_PLAIN_SIZE{6};
+inline constexpr size_t SV2_HEADER_ENCRYPTED_SIZE{SV2_HEADER_PLAIN_SIZE + Poly1305::TAGLEN};
 
 using node::Sv2NetHeader;
 using node::Sv2NetMsg;

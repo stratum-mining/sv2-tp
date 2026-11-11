@@ -39,8 +39,7 @@ MAX_VERSIONS = {
 
 # Ignore symbols that are exported as part of every executable
 IGNORE_EXPORTS = {
-'environ', '_environ', '__environ', '_fini', '_init', 'stdin',
-'stdout', 'stderr',
+'stdin', 'stdout', 'stderr',
 }
 
 # Expected linker-loader names can be found here:
@@ -193,7 +192,7 @@ def check_MACHO_min_os(binary) -> bool:
     return False
 
 def check_MACHO_sdk(binary) -> bool:
-    if binary.build_version.sdk == [14, 0, 0]:
+    if binary.build_version.sdk == [15, 0, 0]:
         return True
     return False
 

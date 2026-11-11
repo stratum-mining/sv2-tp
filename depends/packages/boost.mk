@@ -1,9 +1,14 @@
 package=boost
-$(package)_version = 1.90.0
+$(package)_version = 1.92.0
 $(package)_download_path = https://github.com/boostorg/boost/releases/download/boost-$($(package)_version)
 $(package)_file_name = boost-$($(package)_version)-cmake.tar.gz
-$(package)_sha256_hash = 913ca43d49e93d1b158c9862009add1518a4c665e7853b349a6492d158b036d4
+$(package)_sha256_hash = f51707c27359a0df0cac1beada86de31bb5eed5e8285592dadec384df99c2984
 $(package)_build_subdir = build
+$(package)_patches += drop_wcrtomb_wchar_t.patch
+
+define $(package)_preprocess_cmds
+  patch -p1 < $($(package)_patch_dir)/drop_wcrtomb_wchar_t.patch
+endef
 
 define $(package)_set_vars
   $(package)_config_opts = -DBOOST_INCLUDE_LIBRARIES="multi_index;signals2;test"
@@ -23,4 +28,8 @@ endef
 
 define $(package)_stage_cmds
   $(MAKE) DESTDIR=$($(package)_staging_dir) install
+endef
+
+define $(package)_postprocess_cmds
+  rm -rf share
 endef

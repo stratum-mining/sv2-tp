@@ -90,6 +90,18 @@ The following can be set when running make: `make FOO=bar`
 If some packages are not built, the appropriate CMake cache variables will be set when generating
 the Bitcoin Core buildsystem.
 
+## Compiler Configuration
+
+`CC` and `CXX` control target compilers. `build_CC` and `build_CXX` control
+compilers for native build tools (e.g. `native_capnp`, `native_qt`), which
+default to `gcc`/`g++` on Linux and `clang`/`clang++` on macOS/FreeBSD/OpenBSD
+(see `./depends/builders/*.mk`).
+
+On a system where the default build compiler is not available (e.g. Linux
+without gcc/g++), you could use the following to build all packages using clang:
+
+    make -C depends build_CC=clang build_CXX=clang++ CC=clang CXX=clang++
+
 ## Cross compilation
 
 To build for another arch+OS:
@@ -98,13 +110,13 @@ To build for another arch+OS:
 
 For example:
 
-    make HOST=x86_64-w64-mingw32 -j4
+    make HOST=x86_64-w64-mingw32ucrt -j4
 
 Common `host-platform-triplet`s for cross compilation are:
 
 - `i686-linux-gnu` for Linux x86 32-bit
 - `x86_64-linux-gnu` for Linux x86 64-bit
-- `x86_64-w64-mingw32` for Win64
+- `x86_64-w64-mingw32ucrt` for Windows using UCRT
 - `x86_64-apple-darwin` for Intel macOS
 - `arm64-apple-darwin` for ARM macOS
 - `arm-linux-gnueabihf` for Linux ARM 32-bit
@@ -121,14 +133,14 @@ The paths are automatically configured and no other options are needed.
 
     apt install clang lld llvm zip
 
-Clang 18 or later is required. You must also obtain the macOS SDK before
+Obtaining the macOS SDK is required before
 proceeding with a cross-compile. Under the depends directory, create a
 subdirectory named `SDKs`. Then, place the extracted SDK under this new directory.
 For more information, see [SDK Extraction](../contrib/macdeploy/README.md#sdk-extraction).
 
-#### For Win64 cross compilation
+#### For Windows cross compilation
 
-    apt install g++-mingw-w64-x86-64-posix
+    apt install g++-mingw-w64-ucrt64
 
 #### For Linux cross compilation
 

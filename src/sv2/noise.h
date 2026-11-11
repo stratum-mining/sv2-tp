@@ -22,9 +22,9 @@
  */
 
 /** Section 3: All Noise messages are less than or equal to 65535 bytes in length. */
-static constexpr size_t NOISE_MAX_CHUNK_SIZE = 65535;
+inline constexpr size_t NOISE_MAX_CHUNK_SIZE = 65535;
 
-static constexpr size_t HASHLEN{32};
+inline constexpr size_t HASHLEN{32};
 using NoiseHash = std::array<uint8_t, HASHLEN>;
 
 /** CERTIFICATE for the static key, signed by the authority key. See section

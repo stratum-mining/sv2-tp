@@ -35,9 +35,15 @@ if(NOT CMAKE_ARCHIVE_OUTPUT_DIRECTORY)
   set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
 endif()
 
+set(IS_SOURCE_TARBALL FALSE)
+# git will expand the next line to "set(IS_SOURCE_TARBALL TRUE)" inside archives:
+#$Format:%nset(IS_SOURCE_TARBALL TRUE)$
+if(NOT IS_SOURCE_TARBALL AND PROJECT_IS_TOP_LEVEL)
+  find_package(Git QUIET)
+endif()
 add_custom_target(generate_build_info
   BYPRODUCTS ${PROJECT_BINARY_DIR}/src/bitcoin-build-info.h
-  COMMAND ${CMAKE_COMMAND} -DBUILD_INFO_HEADER_PATH=${PROJECT_BINARY_DIR}/src/bitcoin-build-info.h -DSOURCE_DIR=${PROJECT_SOURCE_DIR} -P ${PROJECT_SOURCE_DIR}/cmake/script/GenerateBuildInfo.cmake
+  COMMAND ${CMAKE_COMMAND} -DGIT_EXECUTABLE=${GIT_EXECUTABLE} -DBUILD_INFO_HEADER_PATH=${PROJECT_BINARY_DIR}/src/bitcoin-build-info.h -DSOURCE_DIR=${PROJECT_SOURCE_DIR} -P ${PROJECT_SOURCE_DIR}/cmake/script/GenerateBuildInfo.cmake
   COMMENT "Generating bitcoin-build-info.h"
   VERBATIM
 )
@@ -100,9 +106,9 @@ include(InstallBinaryComponent)
 if(BUILD_MINE)
   add_executable(sv2-tp
     sv2-tp.cpp
+    sv2-tp.rc
     init/basic.cpp
   )
-  add_windows_resources(sv2-tp sv2-tp-res.rc)
   add_windows_application_manifest(sv2-tp)
   target_link_libraries(sv2-tp
     core_interface

@@ -154,6 +154,10 @@ static void HandleSIGTERM(int)
 
 MAIN_FUNCTION
 {
+    // Sets umask 077, so the files sv2-tp creates, including its keys, are
+    // only readable by the owner.
+    SetupEnvironment();
+
     ArgsManager& args = gArgs;
     PidFileGuard pid_file_guard{args};
     AddArgs(args);

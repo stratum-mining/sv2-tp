@@ -47,10 +47,14 @@ bool Sv2Connman::Start(Sv2EventsInterface* msgproc, std::string host, uint16_t p
 
 bool Sv2Connman::Bind(std::string host, uint16_t port)
 {
-    const CService addr_bind = LookupNumeric(host, port);
+    const std::optional<CService> addr_bind{Lookup(host, port, /*fAllowLookup=*/false)};
+    if (!addr_bind) {
+        LogPrintLevel(BCLog::SV2, BCLog::Level::Error, "Template Provider bind address must be a numeric IP address: %s\n", host);
+        return false;
+    }
 
     bilingual_str error;
-    if (!BindAndStartListening(addr_bind, error)) {
+    if (!BindAndStartListening(*addr_bind, error)) {
         LogPrintLevel(BCLog::SV2, BCLog::Level::Error, "Template Provider failed to bind to port %d: %s\n", port, error.original);
         return false;
     }

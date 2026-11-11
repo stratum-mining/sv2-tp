@@ -16,6 +16,7 @@
 #include <ipc/context.h>
 #include <ipc/exception.h>
 #include <logging.h>
+#include <netbase.h>
 #include <sv2/template_provider.h>
 #include <tinyformat.h>
 #include <util/chaintype.h>
@@ -121,7 +122,7 @@ static void AddArgs(ArgsManager& args)
     args.AddArg("-conf=<file>", "Specify path to the configuration file (default: sv2-tp.conf inside the datadir). Set -conf=0 to disable loading any configuration file.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     args.AddArg("-pid=<file>", strprintf("Specify pid file. Relative paths will be prefixed by a net-specific datadir location. (default: %s)", SV2_TP_PID_FILENAME), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     args.AddArg("-ipcconnect=<address>", "Connect to bitcoin-node process in the background to perform online operations. Valid <address> values are 'unix' to connect to the default socket, 'unix:<socket path>' to connect to a socket at a nonstandard path. Default value: unix", ArgsManager::ALLOW_ANY, OptionsCategory::IPC);
-    args.AddArg("-sv2bind=<addr>[:<port>]", strprintf("Bind to given address and always listen on it (default: 127.0.0.1). Use [host]:port notation for IPv6."), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::CONNECTION);
+    args.AddArg("-sv2bind=<addr>[:<port>]", strprintf("Bind to given numeric address and always listen on it (default: 127.0.0.1). Use [host]:port notation for IPv6."), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::CONNECTION);
     args.AddArg("-sv2port=<port>", strprintf("Listen for Stratum v2 connections on <port> (default: %u, testnet3: %u, testnet4: %u, signet: %u, regtest: %u).", defaultBaseParams->Sv2Port(), testnetBaseParams->Sv2Port(), testnet4BaseParams->Sv2Port(), signetBaseParams->Sv2Port(), regtestBaseParams->Sv2Port()), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::CONNECTION);
     args.AddArg("-sv2maxconnections=<n>", strprintf("Maximum number of simultaneous Stratum v2 connections, including incomplete handshakes (default: %u, 0 = no connection limit)", Sv2TemplateProviderOptions().max_connections), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     args.AddArg("-templateinterval", strprintf("Minimum seconds between fee-based template updates. New blocks always propagate immediately. (default: %d)", Sv2TemplateProviderOptions().template_interval.count()), ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
@@ -243,6 +244,10 @@ MAIN_FUNCTION
         if (sv2_bind) {
             if (!SplitHostPort(sv2_bind.value(), options.port, options.host)) {
                 tfm::format(std::cerr, "Invalid port %d\n", options.port);
+                return EXIT_FAILURE;
+            }
+            if (!Lookup(options.host, options.port, /*fAllowLookup=*/false)) {
+                tfm::format(std::cerr, "Error: -sv2bind address must be a numeric IP address: %s\n", options.host);
                 return EXIT_FAILURE;
             }
         }

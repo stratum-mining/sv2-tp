@@ -65,6 +65,39 @@ BOOST_AUTO_TEST_CASE(zero_disables_connection_limit)
     BOOST_CHECK_EQUAL(tester.ClientCount(), DEFAULT_MAX_SV2_CONNECTIONS + 1);
 }
 
+BOOST_AUTO_TEST_CASE(bind_requires_numeric_address)
+{
+    size_t sockets_created{0};
+    struct RestoreCreateSock {
+        ~RestoreCreateSock() { CreateSock = CreateSockOS; }
+    } restore_create_sock;
+    CreateSock = [&sockets_created](int, int, int) -> std::unique_ptr<Sock> {
+        ++sockets_created;
+        return std::make_unique<DynSock>(std::make_shared<DynSock::Pipes>(), std::make_shared<DynSock::Queue>());
+    };
+
+    CKey static_key;
+    static_key.MakeNewKey(true);
+    auto authority_key{GenerateRandomKey()};
+    uint32_t now_secs{0};
+    uint32_t valid_from{0};
+    uint32_t valid_to{0};
+    Sv2Certificate certificate = MakeSkewTolerantCertificate(static_key, authority_key, now_secs, valid_from, valid_to);
+    const XOnlyPubKey authority_pubkey{authority_key.GetPubKey()};
+
+    for (const std::string host : {"localhost", "not-a-host", ""}) {
+        Sv2Connman connman{static_key, authority_pubkey, certificate};
+        BOOST_CHECK(!connman.Start(nullptr, host, 18447));
+    }
+    BOOST_CHECK_EQUAL(sockets_created, 0U);
+
+    for (const std::string host : {"127.0.0.1", "::1"}) {
+        Sv2Connman connman{static_key, authority_pubkey, certificate};
+        BOOST_CHECK(connman.Start(nullptr, host, 18447));
+    }
+    BOOST_CHECK_EQUAL(sockets_created, 2U);
+}
+
 BOOST_AUTO_TEST_CASE(client_tests)
 {
     ConnTester tester{};

@@ -55,8 +55,8 @@ public:
     virtual std::vector<uint256> getCoinbaseMerklePath() = 0;
 
     /**
-     * Construct and broadcast the block. Modifies the template in place,
-     * updating the fields listed below as well as the merkle root.
+     * Construct and broadcast a block. Newer nodes return an owned copy of
+     * the submitted block for later investigation.
      *
      * @param[in] version version block header field
      * @param[in] timestamp time block header field (unix timestamp)
@@ -64,17 +64,18 @@ public:
      * @param[in] coinbase complete coinbase transaction (including witness)
      * @param[out] reason failure reason (BIP22)
      * @param[out] debug  more detailed rejection reason
+     * @param[out] accepted true if accepted as a new block
      *
      * @note unlike the submitblock RPC, this method does NOT add the
      *       coinbase witness automatically.
      *
-     * @returns true if the block was accepted as a new block
+     * @returns the submitted block, including on rejection; absent before v33
      *
      * @note Bitcoin Core v31 does not have this method (mining.capnp @10) and
      *       throws when it is called. Use submitSolutionOld7() there, see
      *       Sv2TemplateProvider::DetectNodeVersion().
      */
-    virtual bool submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase, std::string& reason, std::string& debug) = 0;
+    virtual std::optional<CBlock> submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase, std::string& reason, std::string& debug, bool& accepted) = 0;
 
     /**
      * Older version of submitSolution() (mining.capnp @7), as used by Bitcoin

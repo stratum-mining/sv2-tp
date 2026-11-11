@@ -5,6 +5,7 @@
 #include <test/sv2_mock_mining.h>
 
 #include <sync.h>
+#include <consensus/merkle.h>
 #include <cassert>
 #include <logging.h>
 #include <sv2/messages.h>
@@ -57,7 +58,12 @@ MockBlockTemplate::MockBlockTemplate(std::shared_ptr<MockState> st, uint256 prev
 }
 
 CBlockHeader MockBlockTemplate::getBlockHeader() { return block.GetBlockHeader(); }
-CBlock MockBlockTemplate::getBlock() { return block; }
+CBlock MockBlockTemplate::getBlock()
+{
+    ++state->get_block_calls;
+    LOCK(state->m);
+    return m_submitted_block.value_or(block);
+}
 std::vector<CAmount> MockBlockTemplate::getTxFees()
 {
     // The real interface exposes fees per transaction. Tests only need the
@@ -68,15 +74,25 @@ std::vector<CAmount> MockBlockTemplate::getTxFees()
 std::vector<int64_t> MockBlockTemplate::getTxSigops() { return {}; }
 node::CoinbaseTx MockBlockTemplate::getCoinbaseTx() { return ExtractCoinbaseTx(block.vtx[0]); }
 std::vector<uint256> MockBlockTemplate::getCoinbaseMerklePath() { return {}; }
-bool MockBlockTemplate::submitSolution(uint32_t, uint32_t, uint32_t, CTransactionRef, std::string& reason, std::string& debug)
+std::optional<CBlock> MockBlockTemplate::submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase, std::string& reason, std::string& debug, bool& accepted)
 {
     ++state->submit_solution_calls;
-    if (state->reject_solution) {
-        reason = "duplicate";
-        debug = "block already known";
-        return false;
+    reason = state->reject_solution ? "duplicate" : "";
+    debug = state->reject_solution ? "block already known" : "";
+    CBlock submitted{block};
+    submitted.nVersion = version;
+    submitted.nTime = timestamp;
+    submitted.nNonce = nonce;
+    submitted.vtx[0] = std::move(coinbase);
+    submitted.hashMerkleRoot = BlockMerkleRoot(submitted);
+    accepted = !state->reject_solution;
+    if (state->return_submitted_block) return submitted;
+    // Match v32: getBlock() returns the submitted block, but the reply omits it.
+    {
+        LOCK(state->m);
+        m_submitted_block = std::move(submitted);
     }
-    return true;
+    return std::nullopt;
 }
 
 bool MockBlockTemplate::submitSolutionOld7(uint32_t, uint32_t, uint32_t, CTransactionRef)

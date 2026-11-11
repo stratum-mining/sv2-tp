@@ -46,6 +46,9 @@ struct MockState {
     std::atomic<bool> fail_get_tip{false};
     //! Make submitSolution() reject the block.
     std::atomic<bool> reject_solution{false};
+    //! Set before starting IPC workers; v32 omits the new reply field.
+    bool return_submitted_block{true};
+    std::atomic<int> get_block_calls{0};
     //! Number of calls to each submitSolution() variant, including calls that
     //! throw because the mock node does not have the method.
     std::atomic<int> submit_solution_calls{0};
@@ -85,7 +88,7 @@ public:
     std::vector<int64_t> getTxSigops() override;
     node::CoinbaseTx getCoinbaseTx() override;
     std::vector<uint256> getCoinbaseMerklePath() override;
-    bool submitSolution(uint32_t, uint32_t, uint32_t, CTransactionRef, std::string&, std::string&) override;
+    std::optional<CBlock> submitSolution(uint32_t, uint32_t, uint32_t, CTransactionRef, std::string&, std::string&, bool&) override;
     bool submitSolutionOld7(uint32_t, uint32_t, uint32_t, CTransactionRef) override;
 
     std::unique_ptr<interfaces::BlockTemplate> waitNext(node::BlockWaitOptions options = {}) override;
@@ -94,6 +97,8 @@ public:
 private:
     std::shared_ptr<MockState> state;
     CBlock block;
+    // The v32 getBlock() fallback returns this after submitSolution(). Guarded by state->m.
+    std::optional<CBlock> m_submitted_block;
     uint64_t m_sequence{0}; // internal sequence number (not exposed yet, reserved for future assertions)
 
     // The mock tracks only aggregate template fees, enough for the SV2

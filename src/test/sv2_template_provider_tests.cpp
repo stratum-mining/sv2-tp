@@ -705,4 +705,41 @@ BOOST_AUTO_TEST_CASE(client_threads_joined_after_disconnect)
     tester.m_mining_control->Shutdown();
 }
 
+// Bitcoin Core stores a submitted coinbase in the template even when it
+// rejects the block, so a later RequestTransactionData must not read the
+// coinbase, which may have no inputs.
+BOOST_AUTO_TEST_CASE(request_transaction_data_after_coinbase_without_inputs)
+{
+    TPTester tester{};
+    tester.handshake();
+    tester.SendSetupConnection();
+    tester.SendCoinbaseOutputConstraints();
+    const uint64_t template_id{tester.ReceiveTemplatePair()};
+
+    tester.SendSubmitSolutionCoinbase(template_id, CMutableTransaction{}); // no inputs, no outputs
+
+    DataStream ss;
+    ss << template_id;
+    std::vector<unsigned char> template_id_bytes(8);
+    ss >> MakeWritableByteSpan(template_id_bytes);
+    node::Sv2NetMsg request{node::Sv2MsgType::REQUEST_TRANSACTION_DATA, std::move(template_id_bytes)};
+    tester.receiveMessage(request);
+
+    // The TP must still be alive and answer without reading the coinbase.
+    node::Sv2NetMsg reply{node::Sv2MsgType::REQUEST_TRANSACTION_DATA_SUCCESS, {}};
+    BOOST_REQUIRE(tester.PeerReceiveBytes(0, &reply) > 0);
+    BOOST_REQUIRE(reply.m_msg_type == node::Sv2MsgType::REQUEST_TRANSACTION_DATA_SUCCESS);
+    DataStream reply_ss{reply.m_msg};
+    uint64_t reply_template_id;
+    uint16_t excess_data_len, tx_count;
+    reply_ss >> reply_template_id >> excess_data_len >> tx_count;
+    BOOST_CHECK_EQUAL(reply_template_id, template_id);
+    BOOST_CHECK_EQUAL(excess_data_len, 0);
+    BOOST_CHECK_EQUAL(tx_count, 0);
+
+    // Let the sv2-saveblk thread finish, it uses the IPC connection.
+    UninterruptibleSleep(std::chrono::milliseconds{1000});
+    tester.m_mining_control->Shutdown();
+}
+
 BOOST_AUTO_TEST_SUITE_END()

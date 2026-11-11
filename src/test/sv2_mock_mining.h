@@ -46,6 +46,8 @@ struct MockState {
     std::atomic<bool> fail_get_tip{false};
     //! Make submitSolution() reject the block.
     std::atomic<bool> reject_solution{false};
+    //! Witness reserved value included in every new block template.
+    uint256 coinbase_witness GUARDED_BY(m);
     //! Number of calls to each submitSolution() variant, including calls that
     //! throw because the mock node does not have the method.
     std::atomic<int> submit_solution_calls{0};
@@ -59,9 +61,7 @@ struct MockState {
     bool pause_create GUARDED_BY(m){false};
     //! Mining::interrupt() cancels template creation, but not waitNext().
     bool mining_interrupted GUARDED_BY(m){false};
-    //! Make waitNext() throw, e.g. to simulate a failed IPC call. Protected by
-    //! m, but not GUARDED_BY(m) because waitNext() waits on a std::unique_lock,
-    //! like for shutdown below.
+    //! Make waitNext() throw, e.g. to simulate a failed IPC call. Protected by m.
     bool fail_wait_next{false};
     ChainState chain;                // grouped chain data
     std::vector<CTransactionRef> txs; // non-coinbase transactions included in templates

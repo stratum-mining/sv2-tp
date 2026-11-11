@@ -8,6 +8,7 @@
 #include <net.h> // for CSerializedNetMsg and CNetMessage
 #include <consensus/validation.h>
 #include <cstdint>
+#include <optional>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <span.h>
@@ -28,7 +29,7 @@ namespace node {
 static constexpr uint8_t TEMPLATE_DISTRIBUTION_PROTOCOL{0x02};
 /** Supported spec versions for Template Distribution connections. */
 static constexpr uint16_t TEMPLATE_DISTRIBUTION_MIN_VERSION{2};
-static constexpr uint16_t TEMPLATE_DISTRIBUTION_MAX_VERSION{2};
+static constexpr uint16_t TEMPLATE_DISTRIBUTION_MAX_VERSION{3};
 
 /**
  * A type used as the message length field in stratum v2 messages.
@@ -249,6 +250,9 @@ struct Sv2SetupConnectionErrorMsg
  */
 struct Sv2NewTemplateMsg
 {
+    /** Negotiated protocol version used for serialization; not a wire field. */
+    uint16_t m_protocol_version{TEMPLATE_DISTRIBUTION_MAX_VERSION};
+
     /**
      * The default message type value for this Stratum V2 message.
      */
@@ -308,6 +312,14 @@ struct Sv2NewTemplateMsg
     std::vector<CTxOut> m_coinbase_tx_outputs;
 
     /**
+     * The optional first (and only) witness stack element of the coinbase.
+     *
+     * Omitted when no witness commitment output is present in
+     * m_coinbase_tx_outputs.
+     */
+    std::optional<uint256> m_coinbase_witness;
+
+    /**
      * The lock_time field in the coinbase transaction.
      */
     uint32_t m_coinbase_tx_locktime;
@@ -349,6 +361,13 @@ struct Sv2NewTemplateMsg
         } else {
             // We will still need to send 2 bytes indicating an empty coinbase-tx_outputs array as a B0_64K.
             s << static_cast<uint16_t>(0);
+        }
+
+        // Version 3 adds coinbase_witness. OPTION[U256] has a one-byte element
+        // count followed by the value when present.
+        if (m_protocol_version >= 3) {
+            s << uint8_t{m_coinbase_witness.has_value()};
+            if (m_coinbase_witness.has_value()) s << *m_coinbase_witness;
         }
 
         s << m_coinbase_tx_locktime

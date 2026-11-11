@@ -273,12 +273,12 @@ void TPTester::receiveMessage(Sv2NetMsg& msg, size_t peer_id)
     SendPeerBytes(peer_id);
 }
 
-Sv2NetMsg TPTester::SetupConnectionMsg()
+Sv2NetMsg TPTester::SetupConnectionMsg(uint16_t max_version)
 {
     std::vector<uint8_t> bytes{
         0x02,                                                 // protocol
         0x02, 0x00,                                           // min_version
-        0x02, 0x00,                                           // max_version
+        uint8_t(max_version), uint8_t(max_version >> 8),        // max_version
         0x00, 0x00, 0x00, 0x00,                               // flags
         0x07, 0x30, 0x2e, 0x30, 0x2e, 0x30, 0x2e, 0x30,       // endpoint_host
         0x61, 0x21,                                           // endpoint_port
@@ -300,12 +300,16 @@ size_t TPTester::GetBlockTemplateCount()
     return m_tp->GetBlockTemplates().size();
 }
 
-void TPTester::SendSetupConnection(size_t peer_id)
+void TPTester::SendSetupConnection(size_t peer_id, uint16_t max_version)
 {
-    node::Sv2NetMsg setup{SetupConnectionMsg()};
+    node::Sv2NetMsg setup{SetupConnectionMsg(max_version)};
     receiveMessage(setup, peer_id);
     // SetupConnection.Success is 6 bytes
-    BOOST_REQUIRE_EQUAL(PeerReceiveBytes(peer_id), SV2_HEADER_ENCRYPTED_SIZE + 6 + Poly1305::TAGLEN);
+    Sv2NetMsg response{node::Sv2MsgType::SETUP_CONNECTION_SUCCESS, {}};
+    BOOST_REQUIRE_EQUAL(PeerReceiveBytes(peer_id, &response), SV2_HEADER_ENCRYPTED_SIZE + 6 + Poly1305::TAGLEN);
+    BOOST_REQUIRE(response.m_msg_type == node::Sv2MsgType::SETUP_CONNECTION_SUCCESS);
+    const Sv2NetMsg expected{node::Sv2SetupConnectionSuccessMsg{max_version, 0}};
+    BOOST_REQUIRE(response.m_msg == expected.m_msg);
 }
 
 void TPTester::SendCoinbaseOutputConstraints(size_t peer_id, uint32_t max_additional_size)
@@ -319,10 +323,11 @@ void TPTester::SendCoinbaseOutputConstraints(size_t peer_id, uint32_t max_additi
     receiveMessage(coc_msg, peer_id);
 }
 
-uint64_t TPTester::ReceiveTemplatePair(size_t peer_id)
+uint64_t TPTester::ReceiveTemplatePair(size_t peer_id, uint16_t protocol_version)
 {
     Sv2NetMsg new_template{node::Sv2MsgType::NEW_TEMPLATE, {}};
-    BOOST_REQUIRE_EQUAL(PeerReceiveBytes(peer_id, &new_template), SV2_HEADER_ENCRYPTED_SIZE + SV2_NEW_TEMPLATE_MSG_SIZE + Poly1305::TAGLEN);
+    const size_t payload_size{SV2_NEW_TEMPLATE_MSG_SIZE - (protocol_version < 3 ? 33 : 0)};
+    BOOST_REQUIRE_EQUAL(PeerReceiveBytes(peer_id, &new_template), SV2_HEADER_ENCRYPTED_SIZE + payload_size + Poly1305::TAGLEN);
     BOOST_REQUIRE(new_template.m_msg_type == node::Sv2MsgType::NEW_TEMPLATE);
     DataStream template_stream{MakeByteSpan(new_template.m_msg)};
     uint64_t template_id;

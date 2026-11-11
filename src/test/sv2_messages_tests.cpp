@@ -119,10 +119,12 @@ BOOST_AUTO_TEST_CASE(Sv2NewTemplate_test)
     // B0_64K           0c                  coinbase_tx_outputs (concatenated, total bytes)
     //                  000100000000000000  amount
     //                  036a012a            len(script) + script
+    // OPTION[U256]     01                  coinbase_witness count
+    //                  0000000000000000000000000000000000000000000000000000000000000000 - witness
     // U32              dbc80d00            coinbase lock time (height 903,387)
     // SEQ0_255[U256]   01                  merkle path length
     //                  1a6240823de4c8d6aaf826851bdf2b0e8d5acf7c31e8578cff4c394b5a32bd4e - merkle path
-    std::string expected{"01000000000000000000000030020000000403012100ffffffff0040075af0750700010000000c000100000000000000036a012adbc80d00011a6240823de4c8d6aaf826851bdf2b0e8d5acf7c31e8578cff4c394b5a32bd4e"};
+    std::string expected{"01000000000000000000000030020000000403012100ffffffff0040075af0750700010000000c000100000000000000036a012a010000000000000000000000000000000000000000000000000000000000000000dbc80d00011a6240823de4c8d6aaf826851bdf2b0e8d5acf7c31e8578cff4c394b5a32bd4e"};
 
     node::Sv2NewTemplateMsg new_template;
     new_template.m_template_id = 1;
@@ -141,6 +143,8 @@ BOOST_AUTO_TEST_CASE(Sv2NewTemplate_test)
     new_template.m_coinbase_tx_outputs_count = 1;
     std::vector<CTxOut> coinbase_tx_ouputs{CTxOut(1, CScript() << OP_RETURN << 42)};
     new_template.m_coinbase_tx_outputs = coinbase_tx_ouputs;
+
+    new_template.m_coinbase_witness = uint256{};
 
     new_template.m_coinbase_tx_locktime = 903387;
 
@@ -177,10 +181,11 @@ BOOST_AUTO_TEST_CASE(Sv2NewTemplate_MultipleOutputs_test)
     //                  026a52              output 2: script (OP_RETURN OP_2)
     //                  2c01000000000000    output 3: 300 sats
     //                  026a53              output 3: script (OP_RETURN OP_3)
+    // OPTION[U256]     00                  coinbase_witness count
     // U32              dbc80d00            coinbase lock time (height 903,387)
     // SEQ0_255[U256]   01                  merkle path length
     //                  1a6240823de4c8d6aaf826851bdf2b0e8d5acf7c31e8578cff4c394b5a32bd4e - merkle path
-    std::string expected{"01000000000000000000000030020000000403012100ffffffff0040075af07507000300000021006400000000000000026a51c800000000000000026a522c01000000000000026a53dbc80d00011a6240823de4c8d6aaf826851bdf2b0e8d5acf7c31e8578cff4c394b5a32bd4e"};
+    std::string expected{"01000000000000000000000030020000000403012100ffffffff0040075af07507000300000021006400000000000000026a51c800000000000000026a522c01000000000000026a5300dbc80d00011a6240823de4c8d6aaf826851bdf2b0e8d5acf7c31e8578cff4c394b5a32bd4e"};
 
     // Create realistic coinbase transaction with dummy anyone-can-spend output
     CMutableTransaction coinbase_tx;
@@ -222,6 +227,60 @@ BOOST_AUTO_TEST_CASE(Sv2NewTemplate_MultipleOutputs_test)
     ss << new_template;
 
     BOOST_CHECK_EQUAL(HexStr(ss), expected);
+}
+
+BOOST_AUTO_TEST_CASE(Sv2NewTemplate_CoinbaseWitness_test)
+{
+    // Cover legacy coinbases, the usual all-zero witness, and a nonzero
+    // witness whose byte order must be preserved by both constructors.
+    for (const auto& witness_hex : {
+             std::string{},
+             std::string(64, '0'),
+             std::string{"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"}}) {
+        CMutableTransaction coinbase_tx;
+        coinbase_tx.version = 2;
+        coinbase_tx.vin.resize(1);
+        coinbase_tx.vin[0].prevout.SetNull();
+        coinbase_tx.vin[0].scriptSig = CScript() << OP_0;
+        coinbase_tx.vin[0].nSequence = 0xffffffff;
+        coinbase_tx.vout.emplace_back(50 * COIN, CScript() << OP_TRUE);
+        coinbase_tx.nLockTime = 0x78563412;
+
+        // Fields through coinbase_tx_value_remaining.
+        std::string expected{"01000000000000000001000000020000000100ffffffff00f2052a01000000"};
+        std::string witness_encoding{"00"};
+        if (witness_hex.empty()) {
+            // Zero outputs and empty B0_64K.
+            expected += "000000000000";
+        } else {
+            coinbase_tx.vin[0].scriptWitness.stack.push_back(ParseHex(witness_hex));
+            const auto commitment{ParseHex("aa21a9ed" + std::string(64, '0'))};
+            coinbase_tx.vout.emplace_back(0, CScript() << OP_RETURN << commitment);
+            // One 47-byte output.
+            expected += "010000002f000000000000000000266a24aa21a9ed" + std::string(64, '0');
+            witness_encoding = "01" + witness_hex;
+        }
+        const std::string legacy_expected{expected + "1234567800"};
+        // Locktime and empty merkle path follow the witness.
+        expected += witness_encoding + "1234567800";
+
+        CBlockHeader header;
+        header.nVersion = 1;
+        const auto coinbase_ref{MakeTransactionRef(coinbase_tx)};
+        for (auto new_template : {
+                 node::Sv2NewTemplateMsg{header, coinbase_ref, {}, 1, false},
+                 node::Sv2NewTemplateMsg{header, ExtractCoinbaseTx(coinbase_ref), {}, 1, false}}) {
+            DataStream ss{};
+            ss << new_template;
+            BOOST_CHECK_EQUAL(HexStr(ss), expected);
+
+            // Version 2 has no witness field, including its option count.
+            new_template.m_protocol_version = 2;
+            DataStream legacy{};
+            legacy << new_template;
+            BOOST_CHECK_EQUAL(HexStr(legacy), legacy_expected);
+        }
+    }
 }
 
 BOOST_AUTO_TEST_CASE(Sv2NetHeader_NewTemplate_test)

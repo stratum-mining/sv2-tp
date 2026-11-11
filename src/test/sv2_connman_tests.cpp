@@ -306,8 +306,10 @@ BOOST_AUTO_TEST_CASE(setup_connection_protocol_version)
 {
     for (const auto& [min_version, max_version, expected_version] : {
              std::array<uint16_t, 3>{2, 2, 2},
+             {2, 3, 3},
+             {3, 3, 3},
              {1, 2, 2},
-             {2, 4, 2}}) {
+             {2, 4, 3}}) {
         ConnTester tester{};
         tester.handshake();
         node::Sv2NetMsg setup{tester.SetupConnectionMsg(node::TEMPLATE_DISTRIBUTION_PROTOCOL, min_version, max_version)};

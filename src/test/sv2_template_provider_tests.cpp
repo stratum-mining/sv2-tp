@@ -34,6 +34,41 @@
 
 BOOST_FIXTURE_TEST_SUITE(sv2_template_provider_tests, Sv2BasicTestingSetup)
 
+BOOST_AUTO_TEST_CASE(protocol_version_templates)
+{
+    TPTester tester{};
+    // Simultaneous clients get the layout selected for their own connection.
+    for (uint16_t version : {2, 3}) {
+        const size_t peer_id{size_t(version - 2)};
+        tester.handshake(peer_id);
+        tester.SendSetupConnection(peer_id, version);
+        tester.SendCoinbaseOutputConstraints(peer_id);
+        tester.ReceiveTemplatePair(peer_id, version);
+    }
+    tester.m_mining_control->Shutdown();
+}
+
+BOOST_AUTO_TEST_CASE(nonzero_witness_requires_version_3)
+{
+    Sv2LogCapture logs;
+    TPTester tester{};
+    {
+        LOCK(tester.m_state->m);
+        tester.m_state->coinbase_witness = uint256::ONE;
+    }
+    tester.handshake();
+    tester.SendSetupConnection(/*peer_id=*/0, /*max_version=*/2);
+    tester.SendCoinbaseOutputConstraints();
+    BOOST_REQUIRE(logs.WaitFor("Cannot send a nonzero coinbase witness to client id=0 using protocol version 2"));
+
+    // The same template can be sent to a version 3 client.
+    tester.handshake(/*peer_id=*/1);
+    tester.SendSetupConnection(/*peer_id=*/1);
+    tester.SendCoinbaseOutputConstraints(/*peer_id=*/1);
+    tester.ReceiveTemplatePair(/*peer_id=*/1);
+    tester.m_mining_control->Shutdown();
+}
+
 BOOST_AUTO_TEST_CASE(block_reserved_weight_floor)
 {
     node::BlockCreateOptions options{};
@@ -154,7 +189,7 @@ BOOST_AUTO_TEST_CASE(client_tests)
     tester.receiveMessage(request_transaction_data_msg);
     BOOST_TEST_MESSAGE("Receive RequestTransactionData.Success");
     // RequestTransactionData.Success on-wire size derived from constants and actual tx size
-    constexpr size_t SV2_RTD_SUCCESS_PREFIX = 8 /*template_id*/ + 2 /*excess len*/ + 2 /*tx_count=1*/;
+    constexpr size_t SV2_RTD_SUCCESS_PREFIX = 8 /*template_id*/ + 2 + 32 /*excess data*/ + 2 /*tx_count=1*/;
     constexpr size_t SV2_U24_LEN = 3; // u24 length per tx
     {
         // Serialize the same deterministic dummy transaction to get exact size

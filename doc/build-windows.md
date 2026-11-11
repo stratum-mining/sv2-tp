@@ -1,6 +1,10 @@
 WINDOWS BUILD NOTES
 ====================
 
+Windows is not currently supported by sv2-tp. These instructions were
+inherited from Bitcoin Core and are retained as reference for the work in
+[PR #93](https://github.com/stratum-mining/sv2-tp/pull/93).
+
 Below are some notes on how to build Bitcoin Core for Windows.
 
 The options known to work for building Bitcoin Core on Windows are:
@@ -15,8 +19,9 @@ Other options which may work, but which have not been extensively tested are (pl
 
 * On Windows, using a POSIX compatibility layer application such as [cygwin](https://www.cygwin.com/) or [msys2](https://www.msys2.org/).
 
-The instructions below may work on Ubuntu and Debian. Guix is used for release
-builds. Make sure the distribution's `g++-mingw-w64-ucrt64`
+The instructions below describe upstream cross-compilation on Ubuntu and
+Debian and have not been validated for sv2-tp. Make sure the distribution's
+`g++-mingw-w64-ucrt64`
 package meets the minimum required `g++` version specified in [dependencies.md](dependencies.md).
 
 Installing Windows Subsystem for Linux

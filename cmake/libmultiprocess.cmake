@@ -15,10 +15,6 @@ function(add_libmultiprocess subdir)
   # libmultiprocess#339 uses C++23 lambda attribute syntax in a public header.
   # Keep this warning visible without failing C++20 builds with warnings treated as errors.
   try_append_cxx_flags("-Wno-error=c++23-lambda-attributes" VAR multiprocess_cxx_flags SKIP_LINK)
-  if(NOT multiprocess_cxx_flags)
-    # Older Clang versions report this under the general C++23 warning group.
-    try_append_cxx_flags("-Wno-error=c++23-extensions" VAR multiprocess_cxx_flags SKIP_LINK)
-  endif()
   if(multiprocess_cxx_flags)
     target_compile_options(multiprocess PUBLIC ${multiprocess_cxx_flags})
   endif()

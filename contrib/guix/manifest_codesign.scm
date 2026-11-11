@@ -3,14 +3,24 @@
              ((gnu packages crypto) #:select (osslsigncode))
              ((gnu packages nss) #:select (nss-certs))
              ((gnu packages python-build) #:select (python-poetry-core python-setuptools))
-             ((gnu packages python-crypto) #:select (python-asn1crypto python-oscrypto))
+             ((gnu packages python-crypto) #:select (python-asn1crypto))
+             ((gnu packages python-crypto) #:select (python-oscrypto) #:prefix guix:)
              ((gnu packages tls) #:select (openssl))
              ((gnu packages version-control) #:select (git-minimal))
              (guix build-system python)
              (guix build-system pyproject)
+             (guix gexp)
              (guix git-download)
              ((guix licenses) #:prefix license:)
              (guix packages))
+
+(define-public python-oscrypto
+  ;; Avoid division by zero when PBKDF2 takes less than a millisecond.
+  ;; The fix is not included in the latest oscrypto release, 1.3.0.
+  ;; Remove this override and patch once Guix includes upstream commit
+  ;; 144c12195001b08b9ccecb8a3fd041d22ae24474.
+  (package-with-extra-patches guix:python-oscrypto
+    (list (local-file "patches/oscrypto-pbkdf2-timing.patch"))))
 
 (define-public python-elfesteem
   (let ((commit "2eb1e5384ff7a220fd1afacd4a0170acff54fe56"))

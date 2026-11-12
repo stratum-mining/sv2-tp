@@ -110,8 +110,11 @@ FUZZ_TARGET(sv2_setup_connection, .init = Sv2FuzzInitialize)
     std::string device_id = FuzzedString(provider);
 
     ss << protocol << min_version << max_version << flags
-       << endpoint_host << endpoint_port
-       << vendor << hardware_version << firmware << device_id;
+       << Using<node::Sv2Bytes255Formatter>(endpoint_host) << endpoint_port
+       << Using<node::Sv2Bytes255Formatter>(vendor)
+       << Using<node::Sv2Bytes255Formatter>(hardware_version)
+       << Using<node::Sv2Bytes255Formatter>(firmware)
+       << Using<node::Sv2Bytes255Formatter>(device_id);
 
     Sv2SetupConnectionMsg msg;
     ss >> msg;
@@ -268,7 +271,7 @@ FUZZ_TARGET(sv2_setup_connection_error, .init = Sv2FuzzInitialize)
     // Roundtrip: read back serialized fields and verify
     uint32_t rt_flags;
     std::string rt_error;
-    ss >> rt_flags >> rt_error;
+    ss >> rt_flags >> Using<node::Sv2Bytes255Formatter>(rt_error);
     assert(rt_flags == flags);
     assert(rt_error == error_code_expect);
 }
@@ -362,7 +365,7 @@ FUZZ_TARGET(sv2_request_transaction_data_error, .init = Sv2FuzzInitialize)
     // Roundtrip: read back serialized fields and verify
     uint64_t rt_template_id;
     std::string rt_error;
-    ss >> rt_template_id >> rt_error;
+    ss >> rt_template_id >> Using<node::Sv2Bytes255Formatter>(rt_error);
     assert(rt_template_id == template_id);
     assert(rt_error == error_code_expect);
 }

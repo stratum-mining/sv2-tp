@@ -311,4 +311,58 @@ BOOST_AUTO_TEST_CASE(Sv2SubmitSolution_test)
     BOOST_CHECK_EQUAL(submit_solution.m_ntime, 1661877399);
     BOOST_CHECK_EQUAL(submit_solution.m_nonce, 58720255);
 }
+
+BOOST_AUTO_TEST_CASE(Sv2SetupConnection_long_strings_test)
+{
+    for (const size_t len : {252, 253, 254, 255}) {
+        DataStream ss{};
+        ss << uint8_t{0} << uint16_t{2} << uint16_t{2} << uint32_t{0};
+        ss << uint8_t{0};                                   // endpoint_host
+        ss << uint16_t{0};                                  // endpoint_port
+        ss << uint8_t(len);                                 // vendor
+        ss.write(MakeByteSpan(std::string(len, 'v')));
+        ss << uint8_t{0} << uint8_t{0};                     // hardware_version, firmware
+        ss << uint8_t{3};                                   // device_id
+        ss.write(MakeByteSpan(std::string{"dev"}));
+
+        node::Sv2SetupConnectionMsg setup_conn;
+        BOOST_CHECK_NO_THROW(ss >> setup_conn);
+        BOOST_CHECK_EQUAL(setup_conn.m_vendor.size(), len);
+        BOOST_CHECK_EQUAL(setup_conn.m_device_id, "dev");
+        BOOST_CHECK(ss.empty());
+    }
+
+    // A length byte announcing more data than the stream holds.
+    DataStream short_ss{};
+    short_ss << uint8_t{255};
+    short_ss.write(MakeByteSpan(std::string(254, 'x')));
+    std::string str;
+    BOOST_CHECK_THROW(short_ss >> Using<node::Sv2Bytes255Formatter>(str), std::ios_base::failure);
+}
+
+BOOST_AUTO_TEST_CASE(Sv2SetupConnectionError_long_error_code_test)
+{
+    for (const size_t len : {252, 253, 255}) {
+        node::Sv2SetupConnectionErrorMsg msg{0, std::string(len, 'e')};
+        DataStream ss{};
+        ss << msg;
+        BOOST_CHECK_EQUAL(ss.size(), 4 + 1 + len);
+        BOOST_CHECK_EQUAL(uint8_t(ss[4]), len);
+    }
+    node::Sv2SetupConnectionErrorMsg msg{0, std::string(256, 'e')};
+    DataStream ss{};
+    BOOST_CHECK_THROW(ss << msg, std::ios_base::failure);
+}
+
+BOOST_AUTO_TEST_CASE(Sv2_length_limit_test)
+{
+    DataStream ss{};
+    const std::vector<uint8_t> bytes(256);
+    BOOST_CHECK_THROW(ss << Using<node::Sv2Bytes255Formatter>(CScript(bytes.begin(), bytes.end())), std::ios_base::failure);
+    BOOST_CHECK_THROW(ss << Using<node::Sv2Seq255Formatter>(std::vector<uint256>(256)), std::ios_base::failure);
+
+    ss << Using<node::Sv2Seq255Formatter>(std::vector<uint256>(255));
+    BOOST_CHECK_EQUAL(ss.size(), 1 + 255 * 32);
+    BOOST_CHECK_EQUAL(uint8_t(ss[0]), 255);
+}
 BOOST_AUTO_TEST_SUITE_END()

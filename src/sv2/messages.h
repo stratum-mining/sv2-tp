@@ -36,6 +36,43 @@ inline constexpr uint16_t TEMPLATE_DISTRIBUTION_MAX_VERSION{2};
 using u24_t = uint8_t[3];
 
 /**
+ * Formatter for the STR0_255 and B0_255 types: a one-byte length followed by
+ * that many bytes. Bitcoin's default string serialization uses a CompactSize
+ * length instead, which differs from 253 bytes up.
+ */
+struct Sv2Bytes255Formatter
+{
+    template <typename Stream, typename V>
+    void Ser(Stream& s, const V& v)
+    {
+        if (v.size() > 255) throw std::ios_base::failure("B0_255 length limit exceeded");
+        s << static_cast<uint8_t>(v.size());
+        if (!v.empty()) s.write(MakeByteSpan(v));
+    }
+
+    template <typename Stream, typename V>
+    void Unser(Stream& s, V& v)
+    {
+        uint8_t size;
+        s >> size;
+        v.resize(size);
+        if (size != 0) s.read(MakeWritableByteSpan(v));
+    }
+};
+
+/** Formatter for the SEQ0_255 type: a one-byte element count followed by the elements. */
+struct Sv2Seq255Formatter
+{
+    template <typename Stream, typename V>
+    void Ser(Stream& s, const V& v)
+    {
+        if (v.size() > 255) throw std::ios_base::failure("SEQ0_255 length limit exceeded");
+        s << static_cast<uint8_t>(v.size());
+        for (const auto& elem : v) s << elem;
+    }
+};
+
+/**
  * All the stratum v2 message types handled by the template provider.
  */
 enum class Sv2MsgType : uint8_t {
@@ -130,12 +167,12 @@ struct Sv2SetupConnectionMsg
           >> m_min_version
           >> m_max_version
           >> m_required_flags
-          >> m_endpoint_host
+          >> Using<Sv2Bytes255Formatter>(m_endpoint_host)
           >> m_endpoint_port
-          >> m_vendor
-          >> m_hardware_version
-          >> m_firmware
-          >> m_device_id;
+          >> Using<Sv2Bytes255Formatter>(m_vendor)
+          >> Using<Sv2Bytes255Formatter>(m_hardware_version)
+          >> Using<Sv2Bytes255Formatter>(m_firmware)
+          >> Using<Sv2Bytes255Formatter>(m_device_id);
     }
 };
 
@@ -239,7 +276,7 @@ struct Sv2SetupConnectionErrorMsg
     void Serialize(Stream& s) const
     {
         s << m_flags
-          << m_error_code;
+          << Using<Sv2Bytes255Formatter>(m_error_code);
     }
 };
 
@@ -328,7 +365,7 @@ struct Sv2NewTemplateMsg
           << m_future_template
           << m_version
           << m_coinbase_tx_version
-          << m_coinbase_prefix
+          << Using<Sv2Bytes255Formatter>(m_coinbase_prefix)
           << m_coinbase_tx_input_sequence
           << m_coinbase_tx_value_remaining
           << m_coinbase_tx_outputs_count;
@@ -352,10 +389,7 @@ struct Sv2NewTemplateMsg
         }
 
         s << m_coinbase_tx_locktime
-          // Technically using VARINT is a problem for a merkle path longer
-          // than 127 elements, but a block can't have enough transactions to
-          // run into that.
-          << m_merkle_path;
+          << Using<Sv2Seq255Formatter>(m_merkle_path);
     }
 };
 
@@ -530,7 +564,7 @@ struct Sv2RequestTransactionDataErrorMsg
     void Serialize(Stream& s) const
     {
         s << m_template_id
-          << m_error_code;
+          << Using<Sv2Bytes255Formatter>(m_error_code);
     }
 };
 

@@ -10,6 +10,7 @@ $Cxx.namespace("ipc::capnp::messages");
 using Common = import "common.capnp";
 using Proxy = import "/mp/proxy.capnp";
 $Proxy.include("interfaces/mining.h");
+$Proxy.include("ipc/capnp/mining-client.h");
 $Proxy.includeTypes("ipc/capnp/mining-types.h");
 
 const maxMoney :Int64 = 2100000000000000;
@@ -36,7 +37,8 @@ interface Mining $Proxy.wrap("interfaces::Mining") {
 interface BlockTemplate $Proxy.wrap("interfaces::BlockTemplate") {
     destroy @0 (context :Proxy.Context) -> ();
     getBlockHeader @1 (context: Proxy.Context) -> (result: Data);
-    getBlock @2 (context: Proxy.Context) -> (result: Data);
+    # Client name for Bitcoin Core's getBlock RPC; keep its ordinal and signature.
+    getSerializedBlock @2 (context: Proxy.Context) -> (result: Data);
     getTxFees @3 (context: Proxy.Context) -> (result: List(Int64));
     getTxSigops @4 (context: Proxy.Context) -> (result: List(Int64));
     getCoinbaseTx @5 (context: Proxy.Context) -> (result: CoinbaseTx);

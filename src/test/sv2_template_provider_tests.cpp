@@ -1,13 +1,16 @@
 #include <boost/test/unit_test.hpp>
 #include <consensus/consensus.h>
+#include <common/args.h>
 #include <interfaces/init.h>
 #include <interfaces/mining.h>
 #include <ipc/exception.h>
+#include <streams.h>
 #include <sv2/block_options.h>
 #include <sv2/messages.h>
 #include <test/sv2_test_setup.h>
 #include <test/util/net.h>
 #include <util/sock.h>
+#include <util/readwritefile.h>
 #include <util/strencodings.h>
 // Synchronization primitives (Mutex/LOCK)
 #include <sync.h>
@@ -21,6 +24,7 @@
 #include <algorithm>
 #include <exception>
 #include <future>
+#include <ios>
 #include <limits>
 #include <memory>
 #include <set>
@@ -326,6 +330,86 @@ BOOST_AUTO_TEST_CASE(submit_solution_interface_version)
         // Let the sv2-saveblk thread finish, it uses the IPC connection.
         UninterruptibleSleep(std::chrono::milliseconds{1000});
 
+        tester.m_mining_control->Shutdown();
+    }
+}
+
+// Both C++ accessors use the existing getBlock RPC. The typed accessor decodes
+// on the caller after the serialized reply has crossed the IPC boundary.
+BOOST_AUTO_TEST_CASE(get_block_accessors)
+{
+    TPTester tester{Sv2TemplateProviderOptions{.is_test = true}};
+    auto block_template = tester.m_mining_proxy->createNewBlock({}, /*cooldown=*/false);
+    const auto serialized = block_template->getSerializedBlock();
+    const CBlock block = block_template->getBlock();
+    std::vector<unsigned char> bytes;
+    VectorWriter writer{bytes, 0};
+    writer << TX_WITH_WITNESS(block);
+    BOOST_CHECK(bytes == serialized.bytes);
+
+    const ipc::Serialized<CBlock> malformed{{0x01, 0x02, 0x00, 0xff}};
+    {
+        LOCK(tester.m_state->m);
+        tester.m_state->get_block_override = malformed;
+    }
+    BOOST_CHECK(block_template->getSerializedBlock().bytes == malformed.bytes);
+    // A local decoding failure remains ios_base::failure. A server-side
+    // decoding failure would instead be wrapped in ipc::Exception.
+    BOOST_CHECK_THROW(block_template->getBlock(), std::ios_base::failure);
+    block_template.reset();
+    tester.m_mining_control->Shutdown();
+}
+
+// Diagnostic files must preserve the complete block, including witness data,
+// after either an accepted or rejected submission.
+BOOST_AUTO_TEST_CASE(save_getblock)
+{
+    fs::create_directories(gArgs.GetDataDirNet());
+    const struct {
+        bool rejected;
+        bool malformed;
+    } cases[]{
+        {false, false}, {false, true}, {true, false}, {true, true},
+    };
+    for (const auto& [rejected, malformed] : cases) {
+        TPTester tester{Sv2TemplateProviderOptions{.is_test = true}};
+        tester.handshake();
+        tester.SendSetupConnection();
+        tester.SendCoinbaseOutputConstraints();
+        const uint64_t id = tester.ReceiveTemplatePair();
+        CBlock block;
+        block.nVersion = 4;
+        block.nNonce = 2 * rejected + malformed;
+        CMutableTransaction coinbase{*MakeDummyTx()};
+        coinbase.vin[0].scriptWitness.stack.emplace_back(32, 0x42);
+        block.vtx.push_back(MakeTransactionRef(coinbase));
+        ipc::Serialized<CBlock> payload;
+        VectorWriter writer{payload.bytes, 0};
+        if (malformed) {
+            // A header with a truncated CompactSize proves that saving does not
+            // decode the transaction body.
+            writer << block.GetBlockHeader();
+            payload.bytes.push_back(0xff);
+        } else {
+            writer << TX_WITH_WITNESS(block);
+        }
+        {
+            LOCK(tester.m_state->m);
+            tester.m_state->get_block_override = payload;
+        }
+        tester.m_state->reject_solution = rejected;
+        const auto path = gArgs.GetDataDirNet() / fs::PathFromString(block.GetHash().ToString() + ".dat");
+        Sv2LogCapture logs;
+        node::Sv2SubmitSolutionMsg solution{};
+        solution.m_template_id = id;
+        solution.m_version = 1;
+        solution.m_coinbase_tx = coinbase;
+        tester.m_tp->SubmitSolution(solution);
+        // The worker logs after closing the completed file.
+        BOOST_REQUIRE(logs.WaitFor("Wrote block " + block.GetHash().ToString()));
+        const auto [saved, bytes] = ReadBinaryFile(path);
+        BOOST_REQUIRE(saved);
+        BOOST_CHECK(bytes == std::string(reinterpret_cast<const char*>(payload.bytes.data()), payload.bytes.size()));
         tester.m_mining_control->Shutdown();
     }
 }

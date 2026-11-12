@@ -10,10 +10,12 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <vector>
 
 #include <interfaces/mining.h>
+#include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <sync.h>
@@ -63,6 +65,8 @@ struct MockState {
     //! m, but not GUARDED_BY(m) because waitNext() waits on a std::unique_lock,
     //! like for shutdown below.
     bool fail_wait_next{false};
+    //! Optional getBlock reply for diagnostic save tests.
+    std::optional<ipc::Serialized<CBlock>> get_block_override GUARDED_BY(m);
     ChainState chain;                // grouped chain data
     std::vector<CTransactionRef> txs; // non-coinbase transactions included in templates
     std::queue<MockEvent> events;    // queued events driving waitNext()
@@ -81,6 +85,7 @@ public:
 
     CBlockHeader getBlockHeader() override;
     CBlock getBlock() override;
+    ipc::Serialized<CBlock> getSerializedBlock() override;
     std::vector<CAmount> getTxFees() override;
     std::vector<int64_t> getTxSigops() override;
     node::CoinbaseTx getCoinbaseTx() override;

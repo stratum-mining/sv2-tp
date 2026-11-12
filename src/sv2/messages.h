@@ -60,6 +60,18 @@ struct Sv2Bytes255Formatter
     }
 };
 
+/** Formatter for the SEQ0_255 type: a one-byte element count followed by the elements. */
+struct Sv2Seq255Formatter
+{
+    template <typename Stream, typename V>
+    void Ser(Stream& s, const V& v)
+    {
+        if (v.size() > 255) throw std::ios_base::failure("SEQ0_255 length limit exceeded");
+        s << static_cast<uint8_t>(v.size());
+        for (const auto& elem : v) s << elem;
+    }
+};
+
 /**
  * All the stratum v2 message types handled by the template provider.
  */
@@ -264,7 +276,7 @@ struct Sv2SetupConnectionErrorMsg
     void Serialize(Stream& s) const
     {
         s << m_flags
-          << m_error_code;
+          << Using<Sv2Bytes255Formatter>(m_error_code);
     }
 };
 
@@ -353,7 +365,7 @@ struct Sv2NewTemplateMsg
           << m_future_template
           << m_version
           << m_coinbase_tx_version
-          << m_coinbase_prefix
+          << Using<Sv2Bytes255Formatter>(m_coinbase_prefix)
           << m_coinbase_tx_input_sequence
           << m_coinbase_tx_value_remaining
           << m_coinbase_tx_outputs_count;
@@ -377,10 +389,7 @@ struct Sv2NewTemplateMsg
         }
 
         s << m_coinbase_tx_locktime
-          // Technically using VARINT is a problem for a merkle path longer
-          // than 127 elements, but a block can't have enough transactions to
-          // run into that.
-          << m_merkle_path;
+          << Using<Sv2Seq255Formatter>(m_merkle_path);
     }
 };
 
@@ -555,7 +564,7 @@ struct Sv2RequestTransactionDataErrorMsg
     void Serialize(Stream& s) const
     {
         s << m_template_id
-          << m_error_code;
+          << Using<Sv2Bytes255Formatter>(m_error_code);
     }
 };
 

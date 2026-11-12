@@ -339,4 +339,30 @@ BOOST_AUTO_TEST_CASE(Sv2SetupConnection_long_strings_test)
     std::string str;
     BOOST_CHECK_THROW(short_ss >> Using<node::Sv2Bytes255Formatter>(str), std::ios_base::failure);
 }
+
+BOOST_AUTO_TEST_CASE(Sv2SetupConnectionError_long_error_code_test)
+{
+    for (const size_t len : {252, 253, 255}) {
+        node::Sv2SetupConnectionErrorMsg msg{0, std::string(len, 'e')};
+        DataStream ss{};
+        ss << msg;
+        BOOST_CHECK_EQUAL(ss.size(), 4 + 1 + len);
+        BOOST_CHECK_EQUAL(uint8_t(ss[4]), len);
+    }
+    node::Sv2SetupConnectionErrorMsg msg{0, std::string(256, 'e')};
+    DataStream ss{};
+    BOOST_CHECK_THROW(ss << msg, std::ios_base::failure);
+}
+
+BOOST_AUTO_TEST_CASE(Sv2_length_limit_test)
+{
+    DataStream ss{};
+    const std::vector<uint8_t> bytes(256);
+    BOOST_CHECK_THROW(ss << Using<node::Sv2Bytes255Formatter>(CScript(bytes.begin(), bytes.end())), std::ios_base::failure);
+    BOOST_CHECK_THROW(ss << Using<node::Sv2Seq255Formatter>(std::vector<uint256>(256)), std::ios_base::failure);
+
+    ss << Using<node::Sv2Seq255Formatter>(std::vector<uint256>(255));
+    BOOST_CHECK_EQUAL(ss.size(), 1 + 255 * 32);
+    BOOST_CHECK_EQUAL(uint8_t(ss[0]), 255);
+}
 BOOST_AUTO_TEST_SUITE_END()

@@ -9,6 +9,8 @@
 node::Sv2NewTemplateMsg::Sv2NewTemplateMsg(const CBlockHeader& header, const node::CoinbaseTx coinbase, std::vector<uint256> coinbase_merkle_path, uint64_t template_id, bool future_template)
     : m_template_id{template_id}, m_future_template{future_template}
 {
+    Assert(coinbase_merkle_path.size() <= 255);
+
     m_version = header.nVersion;
 
     m_coinbase_tx_version = coinbase.version;

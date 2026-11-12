@@ -435,4 +435,26 @@ BOOST_AUTO_TEST_CASE(send_error_removes_client_with_queued_messages)
     BOOST_CHECK(tester.WaitForClientCount(0));
 }
 
+// STR0_255 fields have a one-byte length, so a 255-byte vendor string is valid.
+BOOST_AUTO_TEST_CASE(setup_connection_with_255_byte_string)
+{
+    ConnTester tester{};
+    tester.handshake();
+
+    DataStream ss{};
+    ss << node::TEMPLATE_DISTRIBUTION_PROTOCOL << uint16_t{2} << uint16_t{2} << uint32_t{0};
+    ss << uint8_t{0} << uint16_t{0};
+    ss << uint8_t{255};
+    ss.write(MakeByteSpan(std::string(255, 'v')));
+    ss << uint8_t{0} << uint8_t{0} << uint8_t{0};
+    std::vector<uint8_t> bytes(ss.size());
+    ss >> MakeWritableByteSpan(bytes);
+
+    node::Sv2NetMsg setup{node::Sv2MsgType::SETUP_CONNECTION, std::move(bytes)};
+    tester.RemoteToLocalMsg(setup);
+    auto [response, response_bytes]{tester.LocalToRemoteMsg()};
+    BOOST_CHECK(response.m_msg_type == node::Sv2MsgType::SETUP_CONNECTION_SUCCESS);
+    BOOST_CHECK(tester.IsFullyConnected());
+}
+
 BOOST_AUTO_TEST_SUITE_END()

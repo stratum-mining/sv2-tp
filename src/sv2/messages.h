@@ -36,6 +36,31 @@ inline constexpr uint16_t TEMPLATE_DISTRIBUTION_MAX_VERSION{2};
 using u24_t = uint8_t[3];
 
 /**
+ * Formatter for the STR0_255 and B0_255 types: a one-byte length followed by
+ * that many bytes. Bitcoin's default string serialization uses a CompactSize
+ * length instead, which differs from 253 bytes up.
+ */
+struct Sv2Bytes255Formatter
+{
+    template <typename Stream, typename V>
+    void Ser(Stream& s, const V& v)
+    {
+        if (v.size() > 255) throw std::ios_base::failure("B0_255 length limit exceeded");
+        s << static_cast<uint8_t>(v.size());
+        if (!v.empty()) s.write(MakeByteSpan(v));
+    }
+
+    template <typename Stream, typename V>
+    void Unser(Stream& s, V& v)
+    {
+        uint8_t size;
+        s >> size;
+        v.resize(size);
+        if (size != 0) s.read(MakeWritableByteSpan(v));
+    }
+};
+
+/**
  * All the stratum v2 message types handled by the template provider.
  */
 enum class Sv2MsgType : uint8_t {
@@ -130,12 +155,12 @@ struct Sv2SetupConnectionMsg
           >> m_min_version
           >> m_max_version
           >> m_required_flags
-          >> m_endpoint_host
+          >> Using<Sv2Bytes255Formatter>(m_endpoint_host)
           >> m_endpoint_port
-          >> m_vendor
-          >> m_hardware_version
-          >> m_firmware
-          >> m_device_id;
+          >> Using<Sv2Bytes255Formatter>(m_vendor)
+          >> Using<Sv2Bytes255Formatter>(m_hardware_version)
+          >> Using<Sv2Bytes255Formatter>(m_firmware)
+          >> Using<Sv2Bytes255Formatter>(m_device_id);
     }
 };
 

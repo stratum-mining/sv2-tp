@@ -110,8 +110,11 @@ FUZZ_TARGET(sv2_setup_connection, .init = Sv2FuzzInitialize)
     std::string device_id = FuzzedString(provider);
 
     ss << protocol << min_version << max_version << flags
-       << endpoint_host << endpoint_port
-       << vendor << hardware_version << firmware << device_id;
+       << Using<node::Sv2Bytes255Formatter>(endpoint_host) << endpoint_port
+       << Using<node::Sv2Bytes255Formatter>(vendor)
+       << Using<node::Sv2Bytes255Formatter>(hardware_version)
+       << Using<node::Sv2Bytes255Formatter>(firmware)
+       << Using<node::Sv2Bytes255Formatter>(device_id);
 
     Sv2SetupConnectionMsg msg;
     ss >> msg;

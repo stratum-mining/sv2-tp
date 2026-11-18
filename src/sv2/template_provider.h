@@ -247,6 +247,10 @@ private:
     /**
      * Sends the best NewTemplate and SetNewPrevHash to a client.
      *
+     * @param[in] block   handle to the template block on nodes that have the
+     *                    Block interface, see TemplateBlock(), otherwise nullptr
+     * @param[in] header  header of the template block
+     *
      * The current implementation doesn't create templates for future empty
      * or speculative blocks. Despite that, we first send NewTemplate with
      * future_template set to true, followed by SetNewPrevHash. We do this
@@ -255,7 +259,14 @@ private:
      * When the template is update to take newer mempool transactions into
      * account, we set future_template to false and don't send SetNewPrevHash.
      */
-    [[nodiscard]] bool SendWork(Sv2Client& client, uint64_t template_id, BlockTemplate& block_template, bool future_template);
+    [[nodiscard]] bool SendWork(Sv2Client& client, uint64_t template_id, BlockTemplate& block_template, interfaces::Block* block, const CBlockHeader& header, bool future_template);
+
+    /**
+     * Handle to the block of a template, used for its header, coinbase fields
+     * and merkle path. Returns nullptr for older nodes, which have these on
+     * BlockTemplate. Callers release it after sending the template.
+     */
+    std::unique_ptr<interfaces::Block> TemplateBlock(BlockTemplate& block_template);
 
 };
 

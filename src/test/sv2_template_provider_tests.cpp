@@ -275,8 +275,20 @@ BOOST_AUTO_TEST_CASE(node_version_detection)
         tester.SendCoinbaseOutputConstraints();
         tester.ReceiveTemplatePair();
         BOOST_CHECK_EQUAL(tester.m_tp->GetNodeVersion(), test_case.expected_version);
-        // The block() probe releases its handle.
+
+        // Newer nodes provide the header and merkle path through a Block
+        // handle, which is released after the template is sent. This also
+        // covers the handle of the block() probe.
+        const bool has_block_interface{test_case.version == MockNodeVersion::CURRENT};
+        for (int i = 0; i < 500 && tester.m_state->blocks_alive > 0; ++i) {
+            UninterruptibleSleep(std::chrono::milliseconds{10});
+        }
         BOOST_CHECK_EQUAL(tester.m_state->blocks_alive.load(), 0);
+        BOOST_CHECK_EQUAL(tester.m_state->block_calls.load(), has_block_interface ? 2 : 0);
+        BOOST_CHECK_EQUAL(tester.m_state->block_header_calls.load(), has_block_interface ? 1 : 0);
+        BOOST_CHECK_EQUAL(tester.m_state->block_merkle_path_calls.load(), has_block_interface ? 1 : 0);
+        BOOST_CHECK_EQUAL(tester.m_state->template_header_calls.load(), has_block_interface ? 0 : 1);
+        BOOST_CHECK_EQUAL(tester.m_state->template_merkle_path_calls.load(), has_block_interface ? 0 : 1);
         tester.m_mining_control->Shutdown();
     }
 }
@@ -344,7 +356,8 @@ BOOST_AUTO_TEST_CASE(submit_solution_interface_version)
             solution.m_nonce = 9;
             solution.m_coinbase_tx = CMutableTransaction{*MakeDummyTx()};
 
-            CBlock expected{WITH_LOCK(tester.m_tp->m_tp_mutex, return tester.m_tp->GetBlockTemplates().at(template_id).second)->getBlockHeader()};
+            const auto block_template{WITH_LOCK(tester.m_tp->m_tp_mutex, return tester.m_tp->GetBlockTemplates().at(template_id).second)};
+            CBlock expected{test_case.version == MockNodeVersion::CURRENT ? block_template->block()->header() : block_template->getBlockHeaderOld1()};
             expected.nVersion = solution.m_version;
             expected.nTime = solution.m_ntime;
             expected.nNonce = solution.m_nonce;

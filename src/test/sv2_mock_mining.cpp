@@ -62,13 +62,27 @@ MockBlock::MockBlock(std::shared_ptr<MockState> st, CBlock block) : state(std::m
     ++state->blocks_alive;
 }
 MockBlock::~MockBlock() { --state->blocks_alive; }
+CBlockHeader MockBlock::header()
+{
+    ++state->block_header_calls;
+    return m_block.GetBlockHeader();
+}
 CBlock MockBlock::data()
 {
     ++state->block_data_calls;
     return m_block;
 }
+std::vector<uint256> MockBlock::coinbaseMerklePath()
+{
+    ++state->block_merkle_path_calls;
+    return {};
+}
 
-CBlockHeader MockBlockTemplate::getBlockHeader() { return m_block.GetBlockHeader(); }
+CBlockHeader MockBlockTemplate::getBlockHeaderOld1()
+{
+    ++state->template_header_calls;
+    return m_block.GetBlockHeader();
+}
 std::unique_ptr<interfaces::Block> MockBlockTemplate::block()
 {
     ++state->block_calls;
@@ -89,7 +103,11 @@ std::vector<CAmount> MockBlockTemplate::getTxFees()
 }
 std::vector<int64_t> MockBlockTemplate::getTxSigops() { return {}; }
 node::CoinbaseTx MockBlockTemplate::getCoinbaseTx() { return ExtractCoinbaseTx(m_block.vtx[0]); }
-std::vector<uint256> MockBlockTemplate::getCoinbaseMerklePath() { return {}; }
+std::vector<uint256> MockBlockTemplate::getCoinbaseMerklePathOld6()
+{
+    ++state->template_merkle_path_calls;
+    return {};
+}
 
 CBlock MockBlockTemplate::SolvedBlock(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase) const
 {

@@ -234,8 +234,12 @@ public:
 
 private:
 
-    /* Forget templates from before the last block, but with a few seconds margin. */
-    void PruneBlockTemplateCache() EXCLUSIVE_LOCKS_REQUIRED(m_tp_mutex);
+    /**
+     * Forget templates from before the last block, but with a few seconds
+     * margin. Returns the removed entries, so the caller can release them
+     * after unlocking m_tp_mutex.
+     */
+    [[nodiscard]] BlockTemplateCache PruneBlockTemplateCache() EXCLUSIVE_LOCKS_REQUIRED(m_tp_mutex);
 
     /**
      * Serialize and write a block to disk asynchronously after a short delay.

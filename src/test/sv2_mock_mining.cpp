@@ -78,6 +78,17 @@ std::vector<uint256> MockBlock::coinbaseMerklePath()
     return {};
 }
 
+MockBlockTemplate::~MockBlockTemplate()
+{
+    ++state->templates_destroyed;
+    // The client waits for the destroy call to return, so if it holds
+    // tp_mutex, it holds it now.
+    if (Mutex* tp_mutex{state->tp_mutex}) {
+        TRY_LOCK(*tp_mutex, lock);
+        if (!lock) ++state->templates_destroyed_under_tp_mutex;
+    }
+}
+
 CBlockHeader MockBlockTemplate::getBlockHeaderOld1()
 {
     ++state->template_header_calls;

@@ -143,11 +143,19 @@ private:
      */
     void DetectTemplateInterface(BlockTemplate& block_template);
 
+    struct CachedTemplate {
+        uint256 prev_hash;
+        std::shared_ptr<BlockTemplate> block_template;
+        //! Handle to the template block on nodes that have the Block
+        //! interface, see TemplateBlock(), otherwise nullptr.
+        std::shared_ptr<interfaces::Block> block;
+    };
+
     /**
-     * A cache that maps ids used in NewTemplate messages and its associated
-     * <prevhash,block template>.
+     * A cache that maps ids used in NewTemplate messages to the associated
+     * template.
      */
-    using BlockTemplateCache = std::map<uint64_t, std::pair<uint256, std::shared_ptr<BlockTemplate>>>;
+    using BlockTemplateCache = std::map<uint64_t, CachedTemplate>;
     BlockTemplateCache m_block_template_cache GUARDED_BY(m_tp_mutex);
 
 public:
@@ -266,9 +274,9 @@ private:
     [[nodiscard]] bool SendWork(Sv2Client& client, uint64_t template_id, BlockTemplate& block_template, interfaces::Block* block, const CBlockHeader& header, bool future_template);
 
     /**
-     * Handle to the block of a template, used for its header, coinbase fields
-     * and merkle path. Returns nullptr for older nodes, which have these on
-     * BlockTemplate. Callers release it after sending the template.
+     * Handle to the block of a template, used for its header, merkle path and
+     * transactions. Returns nullptr for older nodes, which have these on
+     * BlockTemplate. It is cached with the template.
      */
     std::unique_ptr<interfaces::Block> TemplateBlock(BlockTemplate& block_template);
 

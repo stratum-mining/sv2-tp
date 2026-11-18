@@ -239,12 +239,16 @@ BOOST_AUTO_TEST_CASE(client_tests)
 
     BOOST_TEST_MESSAGE("Until after some time");
     const int templates_destroyed{tester.m_state->templates_destroyed};
+    BOOST_CHECK_EQUAL(tester.m_state->blocks_alive.load(), 4);
     SetMockTime(GetMockTime() + std::chrono::seconds{15});
     UninterruptibleSleep(std::chrono::milliseconds{1100});
     BOOST_REQUIRE_EQUAL(tester.GetBlockTemplateCount(), 1);
-    // Pruning destroyed the stale templates, without holding m_tp_mutex.
+    // Pruning destroyed the stale templates and their Block handles, without
+    // holding m_tp_mutex.
     BOOST_CHECK_EQUAL(tester.m_state->templates_destroyed.load(), templates_destroyed + 3);
     BOOST_CHECK_EQUAL(tester.m_state->templates_destroyed_under_tp_mutex.load(), 0);
+    BOOST_CHECK_EQUAL(tester.m_state->blocks_alive.load(), 1);
+    BOOST_CHECK_EQUAL(tester.m_state->blocks_destroyed_under_tp_mutex.load(), 0);
 
     tester.receiveMessage(request_transaction_data_msg);
     // RequestTransactionData.Error (just check that the size is different)
@@ -271,29 +275,32 @@ BOOST_AUTO_TEST_CASE(node_version_detection)
 
     for (const auto& test_case : cases) {
         BOOST_TEST_MESSAGE(test_case.description);
-        TPTester tester{Sv2TemplateProviderOptions{.is_test = true}, test_case.version};
-        BOOST_CHECK_EQUAL(tester.m_tp->GetNodeVersion(), test_case.expected_start_version);
+        std::shared_ptr<MockState> state;
+        {
+            TPTester tester{Sv2TemplateProviderOptions{.is_test = true}, test_case.version};
+            state = tester.m_state;
+            BOOST_CHECK_EQUAL(tester.m_tp->GetNodeVersion(), test_case.expected_start_version);
 
-        tester.handshake();
-        tester.SendSetupConnection();
-        tester.SendCoinbaseOutputConstraints();
-        tester.ReceiveTemplatePair();
-        BOOST_CHECK_EQUAL(tester.m_tp->GetNodeVersion(), test_case.expected_version);
+            tester.handshake();
+            tester.SendSetupConnection();
+            tester.SendCoinbaseOutputConstraints();
+            tester.ReceiveTemplatePair();
+            BOOST_CHECK_EQUAL(tester.m_tp->GetNodeVersion(), test_case.expected_version);
 
-        // Newer nodes provide the header and merkle path through a Block
-        // handle, which is released after the template is sent. This also
-        // covers the handle of the block() probe.
-        const bool has_block_interface{test_case.version == MockNodeVersion::CURRENT};
-        for (int i = 0; i < 500 && tester.m_state->blocks_alive > 0; ++i) {
-            UninterruptibleSleep(std::chrono::milliseconds{10});
+            // Newer nodes provide the header and merkle path through a Block
+            // handle, which is cached with the template. The handle of the
+            // block() probe is released right away.
+            const bool has_block_interface{test_case.version == MockNodeVersion::CURRENT};
+            BOOST_CHECK_EQUAL(state->blocks_alive.load(), has_block_interface ? 1 : 0);
+            BOOST_CHECK_EQUAL(state->block_calls.load(), has_block_interface ? 2 : 0);
+            BOOST_CHECK_EQUAL(state->block_header_calls.load(), has_block_interface ? 1 : 0);
+            BOOST_CHECK_EQUAL(state->block_merkle_path_calls.load(), has_block_interface ? 1 : 0);
+            BOOST_CHECK_EQUAL(state->template_header_calls.load(), has_block_interface ? 0 : 1);
+            BOOST_CHECK_EQUAL(state->template_merkle_path_calls.load(), has_block_interface ? 0 : 1);
+            tester.m_mining_control->Shutdown();
         }
-        BOOST_CHECK_EQUAL(tester.m_state->blocks_alive.load(), 0);
-        BOOST_CHECK_EQUAL(tester.m_state->block_calls.load(), has_block_interface ? 2 : 0);
-        BOOST_CHECK_EQUAL(tester.m_state->block_header_calls.load(), has_block_interface ? 1 : 0);
-        BOOST_CHECK_EQUAL(tester.m_state->block_merkle_path_calls.load(), has_block_interface ? 1 : 0);
-        BOOST_CHECK_EQUAL(tester.m_state->template_header_calls.load(), has_block_interface ? 0 : 1);
-        BOOST_CHECK_EQUAL(tester.m_state->template_merkle_path_calls.load(), has_block_interface ? 0 : 1);
-        tester.m_mining_control->Shutdown();
+        // Shutting down the template provider releases the cached handle.
+        BOOST_CHECK_EQUAL(state->blocks_alive.load(), 0);
     }
 }
 
@@ -360,7 +367,7 @@ BOOST_AUTO_TEST_CASE(submit_solution_interface_version)
             solution.m_nonce = 9;
             solution.m_coinbase_tx = CMutableTransaction{*MakeDummyTx()};
 
-            const auto block_template{WITH_LOCK(tester.m_tp->m_tp_mutex, return tester.m_tp->GetBlockTemplates().at(template_id).second)};
+            const auto block_template{WITH_LOCK(tester.m_tp->m_tp_mutex, return tester.m_tp->GetBlockTemplates().at(template_id).block_template)};
             CBlock expected{test_case.version == MockNodeVersion::CURRENT ? block_template->block()->header() : block_template->getBlockHeaderOld1()};
             expected.nVersion = solution.m_version;
             expected.nTime = solution.m_ntime;
@@ -387,20 +394,21 @@ BOOST_AUTO_TEST_CASE(submit_solution_interface_version)
             fs::remove(path);
 
             // Newer nodes return the submitted block, which is released after
-            // it is saved. Older nodes modified the template in place.
+            // it is saved, leaving only the template's cached handle. Older
+            // nodes modified the template in place.
             const bool has_block_interface{test_case.version == MockNodeVersion::CURRENT};
             BOOST_CHECK_EQUAL(tester.m_state->block_data_calls.load(), has_block_interface ? 1 : 0);
             BOOST_CHECK_EQUAL(tester.m_state->get_block_old2_calls.load(), has_block_interface ? 0 : 1);
             BOOST_CHECK_EQUAL(tester.m_state->block_calls.load(), block_calls);
-            BOOST_CHECK_EQUAL(tester.m_state->blocks_alive.load(), 0);
+            BOOST_CHECK_EQUAL(tester.m_state->blocks_alive.load(), has_block_interface ? 1 : 0);
 
             tester.m_mining_control->Shutdown();
         }
     }
 }
 
-// RequestTransactionData reads the template block with block(), or with
-// getBlockOld2() on nodes that don't have it.
+// RequestTransactionData reads the template block through its cached Block
+// handle, or with getBlockOld2() on nodes that don't have it.
 BOOST_AUTO_TEST_CASE(request_transaction_data_interface_version)
 {
     for (const auto version : {MockNodeVersion::CURRENT, MockNodeVersion::V32, MockNodeVersion::V31}) {
@@ -430,10 +438,10 @@ BOOST_AUTO_TEST_CASE(request_transaction_data_interface_version)
         BOOST_CHECK_EQUAL(tx_count, 1);
 
         const bool has_block_interface{version == MockNodeVersion::CURRENT};
-        BOOST_CHECK_EQUAL(tester.m_state->block_calls.load(), block_calls + (has_block_interface ? 1 : 0));
+        BOOST_CHECK_EQUAL(tester.m_state->block_calls.load(), block_calls);
         BOOST_CHECK_EQUAL(tester.m_state->block_data_calls.load(), has_block_interface ? 1 : 0);
         BOOST_CHECK_EQUAL(tester.m_state->get_block_old2_calls.load(), has_block_interface ? 0 : 1);
-        BOOST_CHECK_EQUAL(tester.m_state->blocks_alive.load(), 0);
+        BOOST_CHECK_EQUAL(tester.m_state->blocks_alive.load(), has_block_interface ? 1 : 0);
 
         tester.m_mining_control->Shutdown();
     }
@@ -490,7 +498,7 @@ BOOST_AUTO_TEST_CASE(multiple_clients_receive_own_template_id)
         const auto& templates{tester.m_tp->GetBlockTemplates()};
         const auto cached{templates.find(template_id)};
         BOOST_REQUIRE_MESSAGE(cached != templates.end(), "Received template ID is not cached");
-        BOOST_REQUIRE(cached->second.first == tip);
+        BOOST_REQUIRE(cached->second.prev_hash == tip);
     };
 
     for (size_t peer_id = 0; peer_id < NUM_CLIENTS; ++peer_id) {

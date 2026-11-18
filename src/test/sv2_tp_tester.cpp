@@ -15,6 +15,7 @@
 #include <sv2/template_provider.h>
 #include <sync.h>
 #include <test/util/net.h>
+#include <tinyformat.h>
 #include <util/translation.h>
 
 // Forward-declare the test logging callback provided by main.cpp
@@ -25,20 +26,86 @@ extern std::function<void(const std::string&)> G_TEST_LOG_FUN;
 
 #include <algorithm>
 #include <future>
+#include <string_view>
 
 namespace {
-//! Simulates a node without getTransactionsByTxID(), by throwing the same
-//! exception the IPC layer raises for a method the other side does not
+//! Throw the exception the IPC layer raises for a method the node does not
 //! implement.
+[[noreturn]] void NotImplemented()
+{
+    throw ipc::Exception("kj::Exception: remote exception: Method not implemented.");
+}
+
+//! Throw the exception the IPC layer raises when the node rejects a call to
+//! one of its deprecated methods.
+[[noreturn]] void NotSupported(std::string_view method)
+{
+    throw ipc::Exception(strprintf("kj::Exception: remote exception: std::exception: Old %s not supported. Please update your client!", method));
+}
+
+//! Simulates a block template of a node with the given mining interface
+//! version, see MockNodeVersion.
 //!
-//! The mock server can't do this, because it implements every method of the
-//! current interface. Having it throw instead would not be the same thing: a
-//! real Bitcoin Core v31 node does not throw, capnp just tells the client that
-//! the method does not exist.
-class OldNodeMining : public interfaces::Mining
+//! The mock server can't do this, because it implements every method. Having
+//! it throw instead would not be the same thing: a real Bitcoin Core v31 node
+//! does not throw, capnp just tells the client that the method does not exist.
+class VersionedBlockTemplate : public interfaces::BlockTemplate
 {
 public:
-    explicit OldNodeMining(std::unique_ptr<interfaces::Mining> mining) : m_mining{std::move(mining)} {}
+    VersionedBlockTemplate(std::unique_ptr<interfaces::BlockTemplate> block_template, MockNodeVersion version)
+        : m_template{std::move(block_template)}, m_version{version} {}
+
+    CBlockHeader getBlockHeader() override { return m_template->getBlockHeader(); }
+    std::unique_ptr<interfaces::Block> block() override
+    {
+        if (m_version != MockNodeVersion::CURRENT) NotImplemented();
+        return m_template->block();
+    }
+    CBlock getBlockOld2() override
+    {
+        if (m_version == MockNodeVersion::CURRENT) NotSupported("getBlock (@2)");
+        return m_template->getBlockOld2();
+    }
+    std::vector<CAmount> getTxFees() override { return m_template->getTxFees(); }
+    std::vector<int64_t> getTxSigops() override { return m_template->getTxSigops(); }
+    node::CoinbaseTx getCoinbaseTx() override { return m_template->getCoinbaseTx(); }
+    std::vector<uint256> getCoinbaseMerklePath() override { return m_template->getCoinbaseMerklePath(); }
+    std::unique_ptr<interfaces::Block> submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase, bool& accepted, std::string& reason, std::string& debug) override
+    {
+        if (m_version != MockNodeVersion::CURRENT) NotImplemented();
+        return m_template->submitSolution(version, timestamp, nonce, std::move(coinbase), accepted, reason, debug);
+    }
+    bool submitSolutionOld10(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase, std::string& reason, std::string& debug) override
+    {
+        if (m_version == MockNodeVersion::V31) NotImplemented();
+        if (m_version == MockNodeVersion::CURRENT) NotSupported("submitSolution (@10)");
+        return m_template->submitSolutionOld10(version, timestamp, nonce, std::move(coinbase), reason, debug);
+    }
+    bool submitSolutionOld7(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase) override
+    {
+        if (m_version != MockNodeVersion::V31) NotSupported("submitSolution (@7)");
+        return m_template->submitSolutionOld7(version, timestamp, nonce, std::move(coinbase));
+    }
+    std::unique_ptr<interfaces::BlockTemplate> waitNext(node::BlockWaitOptions options) override
+    {
+        auto next{m_template->waitNext(options)};
+        if (!next) return nullptr;
+        return std::make_unique<VersionedBlockTemplate>(std::move(next), m_version);
+    }
+    void interruptWait() override { m_template->interruptWait(); }
+
+private:
+    std::unique_ptr<interfaces::BlockTemplate> m_template;
+    const MockNodeVersion m_version;
+};
+
+//! Simulates a node with the given mining interface version, see
+//! VersionedBlockTemplate.
+class VersionedMining : public interfaces::Mining
+{
+public:
+    VersionedMining(std::unique_ptr<interfaces::Mining> mining, MockNodeVersion version)
+        : m_mining{std::move(mining)}, m_version{version} {}
 
     bool isTestChain() override { return m_mining->isTestChain(); }
     bool isInitialBlockDownload() override { return m_mining->isInitialBlockDownload(); }
@@ -49,24 +116,39 @@ public:
     }
     std::unique_ptr<interfaces::BlockTemplate> createNewBlock(const node::BlockCreateOptions& options, bool cooldown) override
     {
-        return m_mining->createNewBlock(options, cooldown);
+        auto block_template{m_mining->createNewBlock(options, cooldown)};
+        if (!block_template) return nullptr;
+        return std::make_unique<VersionedBlockTemplate>(std::move(block_template), m_version);
     }
     void interrupt() override { m_mining->interrupt(); }
     bool checkBlock(const CBlock& block, const node::BlockCheckOptions& options, std::string& reason, std::string& debug) override
     {
         return m_mining->checkBlock(block, options, reason, debug);
     }
-    bool submitBlock(const CBlock& block, std::string& reason, std::string& debug) override
+    std::unique_ptr<interfaces::Block> submitBlock(const CBlock& block, bool& accepted, std::string& reason, std::string& debug) override
     {
-        return m_mining->submitBlock(block, reason, debug);
+        if (m_version != MockNodeVersion::CURRENT) NotImplemented();
+        return m_mining->submitBlock(block, accepted, reason, debug);
     }
-    std::vector<CTransactionRef> getTransactionsByTxID(const std::vector<Txid>&) override
+    bool submitBlockOld7(const CBlock& block, std::string& reason, std::string& debug) override
     {
-        throw ipc::Exception("kj::Exception: remote exception: Method not implemented.");
+        if (m_version == MockNodeVersion::CURRENT) NotSupported("submitBlock (@7)");
+        return m_mining->submitBlockOld7(block, reason, debug);
+    }
+    std::vector<CTransactionRef> getTransactionsByTxID(const std::vector<Txid>& txids) override
+    {
+        if (m_version == MockNodeVersion::V31) NotImplemented();
+        return m_mining->getTransactionsByTxID(txids);
+    }
+    std::vector<CTransactionRef> getTransactionsByWitnessID(const std::vector<Wtxid>& wtxids) override
+    {
+        if (m_version == MockNodeVersion::V31) NotImplemented();
+        return m_mining->getTransactionsByWitnessID(wtxids);
     }
 
 private:
     std::unique_ptr<interfaces::Mining> m_mining;
+    const MockNodeVersion m_version;
 };
 
 } // namespace
@@ -128,9 +210,7 @@ TPTester::TPTester(Sv2TemplateProviderOptions opts, MockNodeVersion version)
     BOOST_REQUIRE(m_client_init != nullptr);
     m_mining_proxy = m_client_init->makeMining();
     BOOST_REQUIRE(m_mining_proxy != nullptr);
-    if (version == MockNodeVersion::V31) {
-        m_mining_proxy = std::make_unique<OldNodeMining>(std::move(m_mining_proxy));
-    }
+    m_mining_proxy = std::make_unique<VersionedMining>(std::move(m_mining_proxy), version);
 
     // Construct Template Provider with the IPC-backed Mining proxy
     m_tp = std::make_unique<Sv2TemplateProvider>(*m_mining_proxy);

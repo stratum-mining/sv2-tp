@@ -29,11 +29,16 @@ struct MockInit;
 
 //! Which version of the mining interface the simulated node has. Methods that
 //! it does not have throw, like they do when the IPC layer finds that the
-//! other side does not implement them.
+//! other side does not implement them. Deprecated methods throw like the node
+//! does.
 enum class MockNodeVersion : uint8_t {
-    //! Has getTransactionsByTxID() and submitSolution() with reason and debug.
+    //! Has the Block interface: BlockTemplate::block() and submitSolution()
+    //! (@12) returning a Block. Rejects the older methods.
     CURRENT,
-    //! Bitcoin Core v31: has neither.
+    //! Bitcoin Core v32: has getTransactionsByTxID(), getBlockOld2() and
+    //! submitSolutionOld10() with reason and debug.
+    V32,
+    //! Bitcoin Core v31: has getBlockOld2() and submitSolutionOld7().
     V31,
 };
 

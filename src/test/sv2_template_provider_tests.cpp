@@ -1,5 +1,7 @@
 #include <boost/test/unit_test.hpp>
+#include <common/args.h>
 #include <consensus/consensus.h>
+#include <consensus/merkle.h>
 #include <interfaces/init.h>
 #include <interfaces/mining.h>
 #include <ipc/exception.h>
@@ -7,6 +9,8 @@
 #include <sv2/messages.h>
 #include <test/sv2_test_setup.h>
 #include <test/util/net.h>
+#include <util/fs.h>
+#include <util/readwritefile.h>
 #include <util/sock.h>
 #include <util/strencodings.h>
 // Synchronization primitives (Mutex/LOCK)
@@ -246,18 +250,45 @@ BOOST_AUTO_TEST_CASE(client_tests)
     tester.m_mining_control->Shutdown();
 }
 
-// The node version is determined when the template provider starts.
+// The node version is determined when the template provider starts, and for
+// the first template.
 BOOST_AUTO_TEST_CASE(node_version_detection)
 {
-    {
-        TPTester tester{Sv2TemplateProviderOptions{.is_test = true}, MockNodeVersion::CURRENT};
-        BOOST_CHECK_EQUAL(tester.m_tp->GetNodeVersion(), NODE_VERSION_32_00);
-        tester.m_mining_control->Shutdown();
-    }
-    {
-        BOOST_TEST_MESSAGE("Simulate a Bitcoin Core v31 node");
-        TPTester tester{Sv2TemplateProviderOptions{.is_test = true}, MockNodeVersion::V31};
-        BOOST_CHECK_EQUAL(tester.m_tp->GetNodeVersion(), NODE_VERSION_31_0);
+    const struct {
+        MockNodeVersion version;
+        const char* description;
+        int expected_start_version;
+        int expected_version;
+    } cases[]{
+        {MockNodeVersion::CURRENT, "Simulate a node with the Block interface", NODE_VERSION_32_00, NODE_VERSION_33_00},
+        {MockNodeVersion::V32, "Simulate a Bitcoin Core v32 node", NODE_VERSION_32_00, NODE_VERSION_32_00},
+        {MockNodeVersion::V31, "Simulate a Bitcoin Core v31 node", NODE_VERSION_31_0, NODE_VERSION_31_0},
+    };
+
+    for (const auto& test_case : cases) {
+        BOOST_TEST_MESSAGE(test_case.description);
+        TPTester tester{Sv2TemplateProviderOptions{.is_test = true}, test_case.version};
+        BOOST_CHECK_EQUAL(tester.m_tp->GetNodeVersion(), test_case.expected_start_version);
+
+        tester.handshake();
+        tester.SendSetupConnection();
+        tester.SendCoinbaseOutputConstraints();
+        tester.ReceiveTemplatePair();
+        BOOST_CHECK_EQUAL(tester.m_tp->GetNodeVersion(), test_case.expected_version);
+
+        // Newer nodes provide the header and merkle path through a Block
+        // handle, which is released after the template is sent. This also
+        // covers the handle of the block() probe.
+        const bool has_block_interface{test_case.version == MockNodeVersion::CURRENT};
+        for (int i = 0; i < 500 && tester.m_state->blocks_alive > 0; ++i) {
+            UninterruptibleSleep(std::chrono::milliseconds{10});
+        }
+        BOOST_CHECK_EQUAL(tester.m_state->blocks_alive.load(), 0);
+        BOOST_CHECK_EQUAL(tester.m_state->block_calls.load(), has_block_interface ? 2 : 0);
+        BOOST_CHECK_EQUAL(tester.m_state->block_header_calls.load(), has_block_interface ? 1 : 0);
+        BOOST_CHECK_EQUAL(tester.m_state->block_merkle_path_calls.load(), has_block_interface ? 1 : 0);
+        BOOST_CHECK_EQUAL(tester.m_state->template_header_calls.load(), has_block_interface ? 0 : 1);
+        BOOST_CHECK_EQUAL(tester.m_state->template_merkle_path_calls.load(), has_block_interface ? 0 : 1);
         tester.m_mining_control->Shutdown();
     }
 }
@@ -289,42 +320,116 @@ BOOST_AUTO_TEST_CASE(node_version_detection_propagates_errors)
 }
 
 // Solutions are submitted with the current submitSolution() method, unless the
-// node only has the deprecated one, as is the case for Bitcoin Core v31.
+// node only has a deprecated one, as is the case for Bitcoin Core v31 and v32.
+// The submitted block is saved, whether or not it was accepted.
 BOOST_AUTO_TEST_CASE(submit_solution_interface_version)
 {
+    fs::create_directories(gArgs.GetDataDirNet());
+
     const struct {
         MockNodeVersion version;
         const char* description;
-        int expected_calls;      // calls to submitSolution()
-        int expected_old7_calls; // calls to submitSolutionOld7()
+        int expected_calls;       // calls to submitSolution()
+        int expected_old10_calls; // calls to submitSolutionOld10()
+        int expected_old7_calls;  // calls to submitSolutionOld7()
     } cases[]{
-        {MockNodeVersion::CURRENT, "Simulate a recent node", 1, 0},
-        {MockNodeVersion::V31, "Simulate a Bitcoin Core v31 node", 0, 1},
+        {MockNodeVersion::CURRENT, "Simulate a node with the Block interface", 1, 0, 0},
+        {MockNodeVersion::V32, "Simulate a Bitcoin Core v32 node", 0, 1, 0},
+        {MockNodeVersion::V31, "Simulate a Bitcoin Core v31 node", 0, 0, 1},
     };
 
     for (const auto& test_case : cases) {
-        BOOST_TEST_MESSAGE(test_case.description);
-        TPTester tester{Sv2TemplateProviderOptions{.is_test = true}, test_case.version};
+        for (const bool reject : {false, true}) {
+            BOOST_TEST_MESSAGE(strprintf("%s, %s solution", test_case.description, reject ? "rejected" : "accepted"));
+            TPTester tester{Sv2TemplateProviderOptions{.is_test = true}, test_case.version};
 
+            tester.handshake();
+            tester.SendSetupConnection();
+            tester.SendCoinbaseOutputConstraints();
+            const uint64_t template_id{tester.ReceiveTemplatePair()};
+            tester.m_state->reject_solution = reject;
+
+            node::Sv2SubmitSolutionMsg solution;
+            solution.m_template_id = template_id;
+            solution.m_version = 42;
+            solution.m_ntime = 123456;
+            solution.m_nonce = 9;
+            solution.m_coinbase_tx = CMutableTransaction{*MakeDummyTx()};
+
+            const auto block_template{WITH_LOCK(tester.m_tp->m_tp_mutex, return tester.m_tp->GetBlockTemplates().at(template_id).second)};
+            CBlock expected{test_case.version == MockNodeVersion::CURRENT ? block_template->block()->header() : block_template->getBlockHeaderOld1()};
+            expected.nVersion = solution.m_version;
+            expected.nTime = solution.m_ntime;
+            expected.nNonce = solution.m_nonce;
+            expected.vtx = {MakeTransactionRef(solution.m_coinbase_tx)};
+            expected.hashMerkleRoot = BlockMerkleRoot(expected);
+            const int block_calls{tester.m_state->block_calls.load()};
+
+            tester.m_tp->SubmitSolution(solution);
+
+            BOOST_CHECK_EQUAL(tester.m_state->submit_solution_calls.load(), test_case.expected_calls);
+            BOOST_CHECK_EQUAL(tester.m_state->submit_solution_old10_calls.load(), test_case.expected_old10_calls);
+            BOOST_CHECK_EQUAL(tester.m_state->submit_solution_old7_calls.load(), test_case.expected_old7_calls);
+
+            // Let the sv2-saveblk thread finish, it uses the IPC connection.
+            UninterruptibleSleep(std::chrono::milliseconds{1000});
+
+            const fs::path path{gArgs.GetDataDirNet() / fs::PathFromString(expected.GetHash().ToString() + ".dat")};
+            const auto [read, bytes]{ReadBinaryFile(path)};
+            BOOST_REQUIRE(read);
+            DataStream serialized;
+            serialized << TX_WITH_WITNESS(expected);
+            BOOST_CHECK_EQUAL(bytes, std::string(reinterpret_cast<const char*>(serialized.data()), serialized.size()));
+            fs::remove(path);
+
+            // Newer nodes return the submitted block, which is released after
+            // it is saved. Older nodes modified the template in place.
+            const bool has_block_interface{test_case.version == MockNodeVersion::CURRENT};
+            BOOST_CHECK_EQUAL(tester.m_state->block_data_calls.load(), has_block_interface ? 1 : 0);
+            BOOST_CHECK_EQUAL(tester.m_state->get_block_old2_calls.load(), has_block_interface ? 0 : 1);
+            BOOST_CHECK_EQUAL(tester.m_state->block_calls.load(), block_calls);
+            BOOST_CHECK_EQUAL(tester.m_state->blocks_alive.load(), 0);
+
+            tester.m_mining_control->Shutdown();
+        }
+    }
+}
+
+// RequestTransactionData reads the template block with block(), or with
+// getBlockOld2() on nodes that don't have it.
+BOOST_AUTO_TEST_CASE(request_transaction_data_interface_version)
+{
+    for (const auto version : {MockNodeVersion::CURRENT, MockNodeVersion::V32, MockNodeVersion::V31}) {
+        TPTester tester{Sv2TemplateProviderOptions{.is_test = true}, version};
+        tester.m_state->txs = {MakeDummyTx()};
         tester.handshake();
         tester.SendSetupConnection();
         tester.SendCoinbaseOutputConstraints();
-        tester.ReceiveTemplatePair();
+        const uint64_t template_id{tester.ReceiveTemplatePair()};
+        const int block_calls{tester.m_state->block_calls.load()};
 
-        node::Sv2SubmitSolutionMsg solution;
-        solution.m_template_id = 1;
-        solution.m_version = 1;
-        solution.m_ntime = 0;
-        solution.m_nonce = 0;
-        solution.m_coinbase_tx = CMutableTransaction{*MakeDummyTx()};
+        DataStream ss;
+        ss << template_id;
+        std::vector<unsigned char> template_id_bytes(8);
+        ss >> MakeWritableByteSpan(template_id_bytes);
+        node::Sv2NetMsg request{node::Sv2MsgType::REQUEST_TRANSACTION_DATA, std::move(template_id_bytes)};
+        tester.receiveMessage(request);
 
-        tester.m_tp->SubmitSolution(solution);
+        node::Sv2NetMsg reply{node::Sv2MsgType::REQUEST_TRANSACTION_DATA_SUCCESS, {}};
+        BOOST_REQUIRE(tester.PeerReceiveBytes(0, &reply) > 0);
+        BOOST_REQUIRE(reply.m_msg_type == node::Sv2MsgType::REQUEST_TRANSACTION_DATA_SUCCESS);
+        DataStream reply_ss{reply.m_msg};
+        uint64_t reply_template_id;
+        uint16_t excess_data_len, tx_count;
+        reply_ss >> reply_template_id >> excess_data_len >> tx_count;
+        BOOST_CHECK_EQUAL(reply_template_id, template_id);
+        BOOST_CHECK_EQUAL(tx_count, 1);
 
-        BOOST_CHECK_EQUAL(tester.m_state->submit_solution_calls.load(), test_case.expected_calls);
-        BOOST_CHECK_EQUAL(tester.m_state->submit_solution_old7_calls.load(), test_case.expected_old7_calls);
-
-        // Let the sv2-saveblk thread finish, it uses the IPC connection.
-        UninterruptibleSleep(std::chrono::milliseconds{1000});
+        const bool has_block_interface{version == MockNodeVersion::CURRENT};
+        BOOST_CHECK_EQUAL(tester.m_state->block_calls.load(), block_calls + (has_block_interface ? 1 : 0));
+        BOOST_CHECK_EQUAL(tester.m_state->block_data_calls.load(), has_block_interface ? 1 : 0);
+        BOOST_CHECK_EQUAL(tester.m_state->get_block_old2_calls.load(), has_block_interface ? 0 : 1);
+        BOOST_CHECK_EQUAL(tester.m_state->blocks_alive.load(), 0);
 
         tester.m_mining_control->Shutdown();
     }
@@ -705,12 +810,12 @@ BOOST_AUTO_TEST_CASE(client_threads_joined_after_disconnect)
     tester.m_mining_control->Shutdown();
 }
 
-// Bitcoin Core stores a submitted coinbase in the template even when it
-// rejects the block, so a later RequestTransactionData must not read the
-// coinbase, which may have no inputs.
+// Bitcoin Core v31 and v32 store a submitted coinbase in the template even
+// when they reject the block, so a later RequestTransactionData must not read
+// the coinbase, which may have no inputs.
 BOOST_AUTO_TEST_CASE(request_transaction_data_after_coinbase_without_inputs)
 {
-    TPTester tester{};
+    TPTester tester{Sv2TemplateProviderOptions{.is_test = true}, MockNodeVersion::V32};
     tester.handshake();
     tester.SendSetupConnection();
     tester.SendCoinbaseOutputConstraints();

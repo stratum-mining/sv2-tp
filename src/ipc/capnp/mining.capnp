@@ -25,29 +25,42 @@ interface Mining $Proxy.wrap("interfaces::Mining") {
     createNewBlock @4 (context :Proxy.Context, options: BlockCreateOptions, cooldown: Bool = true) -> (result: BlockTemplate);
     checkBlock @5 (context :Proxy.Context, block: Data, options: BlockCheckOptions) -> (reason: Text, debug: Text, result: Bool);
     interrupt @6 () -> ();
+    getTransactionsByTxID @8 (context :Proxy.Context, txids: List(Data)) -> (result: List(Data));
 
     # Not used by sv2-tp, but declared because capnp ordinals must be
     # sequential and getTransactionsByTxID() is used to detect the node
-    # version, see Sv2TemplateProvider::DetectNodeVersion().
-    submitBlock @7 (context :Proxy.Context, block: Data) -> (reason: Text, debug: Text, result: Bool);
-    getTransactionsByTxID @8 (context :Proxy.Context, txids: List(Data)) -> (result: List(Data));
+    # version, see Sv2TemplateProvider::DetectNodeVersion(). Older nodes
+    # have submitBlockOld7, newer nodes submitBlock.
+    getTransactionsByWitnessID @9 (context :Proxy.Context, wtxids: List(Data)) -> (result: List(Data));
+    submitBlock @10 (context :Proxy.Context, block: Data) -> (accepted: Bool, reason: Text, debug: Text, result: Block);
+    submitBlockOld7 @7 (context :Proxy.Context, block: Data) -> (reason: Text, debug: Text, result: Bool);
+}
+
+interface Block $Proxy.wrap("interfaces::Block") {
+    destroy @0 (context :Proxy.Context) -> ();
+    data @1 (context :Proxy.Context) -> (result :Data);
+    header @2 (context :Proxy.Context) -> (result :Data);
+    coinbaseMerklePath @3 (context :Proxy.Context) -> (result :List(Data));
 }
 
 interface BlockTemplate $Proxy.wrap("interfaces::BlockTemplate") {
     destroy @0 (context :Proxy.Context) -> ();
-    getBlockHeader @1 (context: Proxy.Context) -> (result: Data);
-    getBlock @2 (context: Proxy.Context) -> (result: Data);
     getTxFees @3 (context: Proxy.Context) -> (result: List(Int64));
     getTxSigops @4 (context: Proxy.Context) -> (result: List(Int64));
     getCoinbaseTx @5 (context: Proxy.Context) -> (result: CoinbaseTx);
-    getCoinbaseMerklePath @6 (context: Proxy.Context) -> (result: List(Data));
-    submitSolution @10 (context: Proxy.Context, version: UInt32, timestamp: UInt32, nonce: UInt32, coinbase :Data) -> (reason: Text, debug: Text, result: Bool);
     waitNext @8 (context: Proxy.Context, options: BlockWaitOptions) -> (result: BlockTemplate);
     interruptWait @9() -> ();
+    block @11 (context: Proxy.Context) -> (result: Block);
+    submitSolution @12 (context: Proxy.Context, version: UInt32, timestamp: UInt32, nonce: UInt32, coinbase :Data) -> (accepted: Bool, reason: Text, debug: Text, result: Block);
 
-    # Older version of submitSolution, still used by Bitcoin Core v31.
-    # Newer nodes return an error.
+    # Older versions of Block methods, block() and submitSolution(), still
+    # used by Bitcoin Core v31 (@1, @2, @6 and @7) and v32 (@1, @2, @6 and
+    # @10). Newer nodes return an error.
+    getBlockHeaderOld1 @1 (context: Proxy.Context) -> (result: Data);
+    getBlockOld2 @2 (context: Proxy.Context) -> (result: Data);
+    getCoinbaseMerklePathOld6 @6 (context: Proxy.Context) -> (result: List(Data));
     submitSolutionOld7 @7 (context: Proxy.Context, version: UInt32, timestamp: UInt32, nonce: UInt32, coinbase :Data) -> (result: Bool);
+    submitSolutionOld10 @10 (context: Proxy.Context, version: UInt32, timestamp: UInt32, nonce: UInt32, coinbase :Data) -> (reason: Text, debug: Text, result: Bool);
 }
 
 struct BlockCreateOptions $Proxy.wrap("node::BlockCreateOptions") {

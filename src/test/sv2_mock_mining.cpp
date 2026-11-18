@@ -6,6 +6,7 @@
 
 #include <sync.h>
 #include <cassert>
+#include <consensus/merkle.h>
 #include <logging.h>
 #include <sv2/messages.h>
 #include <tinyformat.h>
@@ -45,19 +46,40 @@ MockBlockTemplate::MockBlockTemplate(std::shared_ptr<MockState> st, uint256 prev
     cb.vout[2].nValue = 0;
     cb.vout[2].scriptPubKey = CScript() << OP_RETURN << std::vector<unsigned char>{'M', 'M'};
 
-    block = CBlock{};
-    block.vtx.clear();
-    block.vtx.push_back(MakeTransactionRef(std::move(cb)));
-    for (auto& tx : txs) block.vtx.push_back(tx);
-    block.nVersion = 1;
-    block.nTime = 0;
-    block.nBits = 0;
-    block.nNonce = 0;
-    block.hashPrevBlock = prev;
+    m_block = CBlock{};
+    m_block.vtx.clear();
+    m_block.vtx.push_back(MakeTransactionRef(std::move(cb)));
+    for (auto& tx : txs) m_block.vtx.push_back(tx);
+    m_block.nVersion = 1;
+    m_block.nTime = 0;
+    m_block.nBits = 0;
+    m_block.nNonce = 0;
+    m_block.hashPrevBlock = prev;
 }
 
-CBlockHeader MockBlockTemplate::getBlockHeader() { return block.GetBlockHeader(); }
-CBlock MockBlockTemplate::getBlock() { return block; }
+MockBlock::MockBlock(std::shared_ptr<MockState> st, CBlock block) : state(std::move(st)), m_block(std::move(block))
+{
+    ++state->blocks_alive;
+}
+MockBlock::~MockBlock() { --state->blocks_alive; }
+CBlock MockBlock::data()
+{
+    ++state->block_data_calls;
+    return m_block;
+}
+
+CBlockHeader MockBlockTemplate::getBlockHeader() { return m_block.GetBlockHeader(); }
+std::unique_ptr<interfaces::Block> MockBlockTemplate::block()
+{
+    ++state->block_calls;
+    return std::make_unique<MockBlock>(state, m_block);
+}
+CBlock MockBlockTemplate::getBlockOld2()
+{
+    ++state->get_block_old2_calls;
+    LOCK(state->m);
+    return m_submitted_block.value_or(m_block);
+}
 std::vector<CAmount> MockBlockTemplate::getTxFees()
 {
     // The real interface exposes fees per transaction. Tests only need the
@@ -66,13 +88,40 @@ std::vector<CAmount> MockBlockTemplate::getTxFees()
     return m_total_fees > 0 ? std::vector<CAmount>{m_total_fees} : std::vector<CAmount>{};
 }
 std::vector<int64_t> MockBlockTemplate::getTxSigops() { return {}; }
-node::CoinbaseTx MockBlockTemplate::getCoinbaseTx() { return ExtractCoinbaseTx(block.vtx[0]); }
+node::CoinbaseTx MockBlockTemplate::getCoinbaseTx() { return ExtractCoinbaseTx(m_block.vtx[0]); }
 std::vector<uint256> MockBlockTemplate::getCoinbaseMerklePath() { return {}; }
-bool MockBlockTemplate::submitSolution(uint32_t, uint32_t, uint32_t, CTransactionRef coinbase, std::string& reason, std::string& debug)
+
+CBlock MockBlockTemplate::SolvedBlock(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase) const
+{
+    CBlock block{m_block};
+    block.nVersion = version;
+    block.nTime = timestamp;
+    block.nNonce = nonce;
+    block.vtx[0] = std::move(coinbase);
+    block.hashMerkleRoot = BlockMerkleRoot(block);
+    return block;
+}
+
+std::unique_ptr<interfaces::Block> MockBlockTemplate::submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase, bool& accepted, std::string& reason, std::string& debug)
 {
     ++state->submit_solution_calls;
-    // Like Bitcoin Core, retain the submitted coinbase even if the block is rejected.
-    if (coinbase) block.vtx[0] = coinbase;
+    if (!coinbase) throw std::invalid_argument("Coinbase transaction must not be null");
+    // Like Bitcoin Core, leave the template unchanged and return the block,
+    // even if it is rejected.
+    accepted = !state->reject_solution;
+    if (!accepted) {
+        reason = "duplicate";
+        debug = "block already known";
+    }
+    return std::make_unique<MockBlock>(state, SolvedBlock(version, timestamp, nonce, std::move(coinbase)));
+}
+
+bool MockBlockTemplate::submitSolutionOld10(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase, std::string& reason, std::string& debug)
+{
+    ++state->submit_solution_old10_calls;
+    if (!coinbase) return false;
+    // Like Bitcoin Core v32, modify the template even if the block is rejected.
+    WITH_LOCK(state->m, m_submitted_block = SolvedBlock(version, timestamp, nonce, std::move(coinbase)));
     if (state->reject_solution) {
         reason = "duplicate";
         debug = "block already known";
@@ -81,10 +130,11 @@ bool MockBlockTemplate::submitSolution(uint32_t, uint32_t, uint32_t, CTransactio
     return true;
 }
 
-bool MockBlockTemplate::submitSolutionOld7(uint32_t, uint32_t, uint32_t, CTransactionRef coinbase)
+bool MockBlockTemplate::submitSolutionOld7(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase)
 {
     ++state->submit_solution_old7_calls;
-    if (coinbase) block.vtx[0] = coinbase;
+    if (!coinbase) return false;
+    WITH_LOCK(state->m, m_submitted_block = SolvedBlock(version, timestamp, nonce, std::move(coinbase)));
     return !state->reject_solution;
 }
 
@@ -114,7 +164,7 @@ std::unique_ptr<interfaces::BlockTemplate> MockBlockTemplate::waitNext(node::Blo
         auto predicate = [&] {
             return state->shutdown || state->fail_wait_next ||
                    state->wait_interrupt_generation != observed_interrupt_generation ||
-                   state->chain.prev_hash != block.hashPrevBlock ||
+                   state->chain.prev_hash != m_block.hashPrevBlock ||
                    !state->events.empty();
         };
         if (!state->cv.wait_until(lk, deadline, predicate)) {
@@ -129,7 +179,7 @@ std::unique_ptr<interfaces::BlockTemplate> MockBlockTemplate::waitNext(node::Blo
         if (state->wait_interrupt_generation != observed_interrupt_generation) {
             return nullptr;
         }
-        if (state->chain.prev_hash != block.hashPrevBlock) {
+        if (state->chain.prev_hash != m_block.hashPrevBlock) {
             // The tip changed since this template was built. Like the real
             // waitNext(), every waiter observes this and emits a template for
             // the new tip, regardless of the fee threshold.
@@ -209,8 +259,14 @@ void MockMining::interrupt()
     state->cv.notify_all();
 }
 bool MockMining::checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) { return true; }
-bool MockMining::submitBlock(const CBlock&, std::string&, std::string&) { return true; }
+std::unique_ptr<interfaces::Block> MockMining::submitBlock(const CBlock& block, bool& accepted, std::string&, std::string&)
+{
+    accepted = true;
+    return std::make_unique<MockBlock>(state, block);
+}
+bool MockMining::submitBlockOld7(const CBlock&, std::string&, std::string&) { return true; }
 std::vector<CTransactionRef> MockMining::getTransactionsByTxID(const std::vector<Txid>&) { return {}; }
+std::vector<CTransactionRef> MockMining::getTransactionsByWitnessID(const std::vector<Wtxid>&) { return {}; }
 
 uint64_t MockMining::GetTemplateSeq()
 {

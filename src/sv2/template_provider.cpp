@@ -25,6 +25,16 @@
 // Allow a few seconds for clients to submit a block or to request transactions
 constexpr size_t STALE_TEMPLATE_GRACE_PERIOD{10};
 
+namespace {
+//! Whether the IPC call failed because the node does not have the method.
+//! ipc::Exception does not preserve the Cap'n Proto error type, so match its
+//! missing-method diagnostic.
+bool IsMethodNotImplemented(const ipc::Exception& e)
+{
+    return std::string_view{e.what()}.find("Method not implemented.") != std::string_view::npos;
+}
+} // namespace
+
 Sv2TemplateProvider::Sv2TemplateProvider(interfaces::Mining& mining) : m_mining{mining}
 {
     // TODO: persist static key
@@ -115,13 +125,30 @@ void Sv2TemplateProvider::DetectNodeVersion()
         m_mining.getTransactionsByTxID({});
         m_node_version = NODE_VERSION_32_00;
     } catch (const ipc::Exception& e) {
-        // ipc::Exception does not preserve the Cap'n Proto error type, so
-        // match its missing-method diagnostic. Other failures must propagate.
-        if (std::string_view{e.what()}.find("Method not implemented.") == std::string_view::npos) throw;
+        // Other failures must propagate.
+        if (!IsMethodNotImplemented(e)) throw;
         m_node_version = NODE_VERSION_31_0;
         LogTrace(BCLog::SV2, "getTransactionsByTxID() is not available: %s\n", e.what());
         // The IPC layer logs the failed call above as an error, so explain it.
         LogInfo("The IPC error above is expected when connecting to Bitcoin Core v31, which "
+                "has an older mining interface\n");
+    }
+}
+
+void Sv2TemplateProvider::DetectTemplateInterface(BlockTemplate& block_template)
+{
+    if (m_node_version < NODE_VERSION_32_00) return;
+    // block() was added to the BlockTemplate interface after Bitcoin Core v32.
+    // It has no side effects, and the returned handle is released right away.
+    try {
+        (void)block_template.block();
+        m_node_version = NODE_VERSION_33_00;
+    } catch (const ipc::Exception& e) {
+        // Other failures must propagate.
+        if (!IsMethodNotImplemented(e)) throw;
+        LogTrace(BCLog::SV2, "BlockTemplate::block() is not available: %s\n", e.what());
+        // The IPC layer logs the failed call above as an error, so explain it.
+        LogInfo("The IPC error above is expected when connecting to Bitcoin Core v32, which "
                 "has an older mining interface\n");
     }
 }
@@ -168,7 +195,7 @@ void Sv2TemplateProvider::Interrupt()
         try {
             LOCK(m_tp_mutex);
             for (auto& t : GetBlockTemplates()) {
-                t.second.second->interruptWait();
+                t.second.block_template->interruptWait();
             }
         } catch (const ipc::Exception& e) {
             LogPrintf("Unable to interrupt block-template wait: %s\n", e.what());
@@ -305,8 +332,9 @@ void Sv2TemplateProvider::ThreadSv2Handler()
         // Take a break (handling new connections is not urgent)
         std::this_thread::sleep_for(100ms);
 
-        LOCK(m_tp_mutex);
-        PruneBlockTemplateCache();
+        // Release pruned templates after unlocking m_tp_mutex: destroying a
+        // template waits for the node to reply.
+        const BlockTemplateCache pruned{WITH_LOCK(m_tp_mutex, return PruneBlockTemplateCache())};
     }
 
     for (auto& entry : client_threads) {
@@ -346,7 +374,7 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
         };
 
         std::shared_ptr<BlockTemplate> block_template;
-        // Cache most recent block_template->getBlockHeader().hashPrevBlock result.
+        // hashPrevBlock of the most recent template.
         uint256 prev_hash;
 
         // Track the coinbase constraints generation that was active when block_template was built.
@@ -382,6 +410,7 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                         client_id);
                     break;
                 }
+                std::call_once(m_template_interface_detected, [&] { DetectTemplateInterface(*block_template); });
 
                 bool stale{false};
                 {
@@ -402,7 +431,9 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                 LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "Assemble template: %.2fms\n",
                     Ticks<MillisecondsDouble>(SteadyClock::now() - time_start));
 
-                prev_hash = block_template->getBlockHeader().hashPrevBlock;
+                const std::shared_ptr<interfaces::Block> block{TemplateBlock(*block_template)};
+                const CBlockHeader header{block ? block->header() : block_template->getBlockHeaderOld1()};
+                prev_hash = header.hashPrevBlock;
                 {
                     LOCK(m_tp_mutex);
                     if (prev_hash != m_best_prev_hash) {
@@ -413,7 +444,7 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
 
                     // Add template to cache before sending it, to prevent race
                     // condition: https://github.com/stratum-mining/stratum/issues/1773
-                    m_block_template_cache.insert({template_id,std::make_pair(prev_hash, block_template)});
+                    m_block_template_cache.insert({template_id, CachedTemplate{prev_hash, block_template, block}});
                 }
 
                 {
@@ -425,7 +456,7 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                         block_template = nullptr;
                         continue;
                     }
-                    if (!SendWork(*client, template_id, *block_template, /*future_template=*/true)) {
+                    if (!SendWork(*client, template_id, *block_template, block.get(), header, /*future_template=*/true)) {
                         LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "Disconnecting client id=%zu\n",
                                     client_id);
                         LOCK(client->cs_status);
@@ -479,7 +510,9 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
             // After timeout and during node shutdown this is expect to not be set
             if (tmpl) {
                 block_template = tmpl;
-                uint256 new_prev_hash{block_template->getBlockHeader().hashPrevBlock};
+                const std::shared_ptr<interfaces::Block> block{TemplateBlock(*block_template)};
+                const CBlockHeader header{block ? block->header() : block_template->getBlockHeaderOld1()};
+                const uint256 new_prev_hash{header.hashPrevBlock};
 
                 // Compare against the handler-local prev_hash, not the shared
                 // m_best_prev_hash: another client handler may have already
@@ -509,7 +542,7 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
 
                     // Add template to cache before sending it, to prevent race
                     // condition: https://github.com/stratum-mining/stratum/issues/1773
-                    m_block_template_cache.insert({template_id, std::make_pair(new_prev_hash,block_template)});
+                    m_block_template_cache.insert({template_id, CachedTemplate{new_prev_hash, block_template, block}});
                 }
 
                 {
@@ -527,7 +560,7 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                         continue;
                     }
 
-                    if (!SendWork(*client, template_id, *block_template, future_template)) {
+                    if (!SendWork(*client, template_id, *block_template, block.get(), header, future_template)) {
                         LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "Disconnecting client id=%zu\n",
                                     client_id);
                         LOCK(client->cs_status);
@@ -569,7 +602,8 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
 
 void Sv2TemplateProvider::RequestTransactionData(Sv2Client& client, node::Sv2RequestTransactionDataMsg msg)
 {
-    CBlock block;
+    std::shared_ptr<BlockTemplate> block_template;
+    std::shared_ptr<interfaces::Block> block_handle;
     {
         LOCK(m_tp_mutex);
         auto cached_block = m_block_template_cache.find(msg.m_template_id);
@@ -583,11 +617,11 @@ void Sv2TemplateProvider::RequestTransactionData(Sv2Client& client, node::Sv2Req
 
             return;
         }
-        block = (*cached_block->second.second).getBlock();
+        const uint256& prev_hash{cached_block->second.prev_hash};
 
         auto recent = GetTime<std::chrono::seconds>() - std::chrono::seconds(STALE_TEMPLATE_GRACE_PERIOD);
-        if (block.hashPrevBlock != m_best_prev_hash && m_last_block_time < recent) {
-            LogTrace(BCLog::SV2, "Template id=%lu prevhash=%s, tip=%s\n", msg.m_template_id, HexStr(block.hashPrevBlock), HexStr(m_best_prev_hash));
+        if (prev_hash != m_best_prev_hash && m_last_block_time < recent) {
+            LogTrace(BCLog::SV2, "Template id=%lu prevhash=%s, tip=%s\n", msg.m_template_id, HexStr(prev_hash), HexStr(m_best_prev_hash));
             node::Sv2RequestTransactionDataErrorMsg request_tx_data_error{msg.m_template_id, "stale-template-id"};
 
             LogDebug(BCLog::SV2, "Send 0x75 RequestTransactionData.Error (stale-template-id) to client id=%zu\n",
@@ -596,7 +630,13 @@ void Sv2TemplateProvider::RequestTransactionData(Sv2Client& client, node::Sv2Req
             client.m_send_messages.emplace_back(request_tx_data_error);
             return;
         }
+        block_template = cached_block->second.block_template;
+        block_handle = cached_block->second.block;
     }
+
+    // Fetch the block without holding m_tp_mutex. Older nodes have no Block
+    // handle.
+    const CBlock block{block_handle ? block_handle->data() : block_template->getBlockOld2()};
 
     std::vector<CTransactionRef> txs;
     if (block.vtx.size() > 0) {
@@ -651,27 +691,36 @@ void Sv2TemplateProvider::SubmitSolution(node::Sv2SubmitSolutionMsg solution)
              * on the network. In case of a reorg the node will be able to switch
              * faster because it already has (but not fully validated) the block.
              */
-            block_template = cached_block_template->second.second;
+            block_template = cached_block_template->second.block_template;
         }
 
         // Submit the solution to construct and process the block, using the
-        // method that DetectNodeVersion() found.
+        // method that DetectNodeVersion() and DetectTemplateInterface() found.
         const CTransactionRef coinbase_tx{MakeTransactionRef(solution.m_coinbase_tx)};
         std::string reason, debug;
         bool submitted{false};
+        std::unique_ptr<interfaces::Block> block;
 
         if (m_node_version < NODE_VERSION_32_00) {
             submitted = block_template->submitSolutionOld7(solution.m_version,
                                                            solution.m_ntime,
                                                            solution.m_nonce,
                                                            coinbase_tx);
+        } else if (m_node_version < NODE_VERSION_33_00) {
+            submitted = block_template->submitSolutionOld10(solution.m_version,
+                                                            solution.m_ntime,
+                                                            solution.m_nonce,
+                                                            coinbase_tx,
+                                                            reason,
+                                                            debug);
         } else {
-            submitted = block_template->submitSolution(solution.m_version,
-                                                       solution.m_ntime,
-                                                       solution.m_nonce,
-                                                       coinbase_tx,
-                                                       reason,
-                                                       debug);
+            block = block_template->submitSolution(solution.m_version,
+                                                   solution.m_ntime,
+                                                   solution.m_nonce,
+                                                   coinbase_tx,
+                                                   submitted,
+                                                   reason,
+                                                   debug);
         }
 
         if (!submitted) {
@@ -680,19 +729,24 @@ void Sv2TemplateProvider::SubmitSolution(node::Sv2SubmitSolutionMsg solution)
                        debug.empty() ? std::string{} : strprintf(" (%s)", debug));
         }
 
-        SaveBlockAsync(block_template, submitted);
+        SaveBlockAsync(block_template, std::move(block), submitted);
 }
 
-void Sv2TemplateProvider::SaveBlockAsync(std::shared_ptr<BlockTemplate> block_template, bool submitted)
+void Sv2TemplateProvider::SaveBlockAsync(std::shared_ptr<BlockTemplate> block_template, std::unique_ptr<interfaces::Block> block_handle, bool submitted)
 {
     // Briefly wait (so we can focus on the next template) and then fetch and
     // store the block for debugging purposes.
     std::thread(&util::TraceThread, "sv2-saveblk",
-                [block_template = std::move(block_template), submitted]() mutable {
+                [block_template = std::move(block_template),
+                 // TraceThread() needs a copyable function
+                 block_handle = std::shared_ptr<interfaces::Block>{std::move(block_handle)},
+                 submitted]() mutable {
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
         try {
-            // Retrieve block after delay
-            const CBlock block{block_template->getBlock()};
+            // Retrieve block after delay. Older nodes return no handle, but
+            // modified the template in place.
+            const CBlock block{block_handle ? block_handle->data() : block_template->getBlockOld2()};
+            block_handle.reset();
             const uint256 block_hash = block.GetHash();
             const fs::path out_path = gArgs.GetDataDirNet() / (block_hash.ToString() + ".dat").c_str();
 
@@ -718,31 +772,39 @@ void Sv2TemplateProvider::SaveBlockAsync(std::shared_ptr<BlockTemplate> block_te
     }).detach();
 }
 
-void Sv2TemplateProvider::PruneBlockTemplateCache()
+Sv2TemplateProvider::BlockTemplateCache Sv2TemplateProvider::PruneBlockTemplateCache()
 {
     AssertLockHeld(m_tp_mutex);
 
+    BlockTemplateCache pruned;
     auto recent = GetTime<std::chrono::seconds>() - std::chrono::seconds(STALE_TEMPLATE_GRACE_PERIOD);
-    if (m_last_block_time > recent) return;
+    if (m_last_block_time > recent) return pruned;
     // If the blocks prevout is not the tip's prevout, delete it.
-    uint256 prev_hash = m_best_prev_hash;
-    std::erase_if(m_block_template_cache, [prev_hash] (const auto& kv) {
-        if (kv.second.first != prev_hash) {
-            LogTrace(BCLog::SV2, "Prune stale template id=%lu (%zus after new tip)", kv.first, STALE_TEMPLATE_GRACE_PERIOD);
-            return true;
+    for (auto it{m_block_template_cache.begin()}; it != m_block_template_cache.end();) {
+        auto next{std::next(it)};
+        if (it->second.prev_hash != m_best_prev_hash) {
+            LogTrace(BCLog::SV2, "Prune stale template id=%lu (%zus after new tip)", it->first, STALE_TEMPLATE_GRACE_PERIOD);
+            pruned.insert(m_block_template_cache.extract(it));
         }
-        return false;
-    });
+        it = next;
+    }
+    return pruned;
 }
 
-bool Sv2TemplateProvider::SendWork(Sv2Client& client, uint64_t template_id, BlockTemplate& block_template, bool future_template)
+std::unique_ptr<interfaces::Block> Sv2TemplateProvider::TemplateBlock(BlockTemplate& block_template)
 {
-    CBlockHeader header{block_template.getBlockHeader()};
+    // Use the interface that DetectTemplateInterface() found.
+    if (m_node_version < NODE_VERSION_33_00) return nullptr;
+    return block_template.block();
+}
+
+bool Sv2TemplateProvider::SendWork(Sv2Client& client, uint64_t template_id, BlockTemplate& block_template, interfaces::Block* block, const CBlockHeader& header, bool future_template)
+{
     node::CoinbaseTx coinbase{block_template.getCoinbaseTx()};
 
     node::Sv2NewTemplateMsg new_template{header,
                                          coinbase,
-                                         block_template.getCoinbaseMerklePath(),
+                                         block ? block->coinbaseMerklePath() : block_template.getCoinbaseMerklePathOld6(),
                                          template_id,
                                          future_template};
 

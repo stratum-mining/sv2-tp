@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <vector>
 
@@ -46,10 +47,31 @@ struct MockState {
     std::atomic<bool> fail_get_tip{false};
     //! Make submitSolution() reject the block.
     std::atomic<bool> reject_solution{false};
-    //! Number of calls to each submitSolution() variant, including calls that
-    //! throw because the mock node does not have the method.
+    //! Number of calls to each submitSolution() variant.
     std::atomic<int> submit_solution_calls{0};
+    std::atomic<int> submit_solution_old10_calls{0};
     std::atomic<int> submit_solution_old7_calls{0};
+    //! Number of calls to BlockTemplate::block(), getBlockOld2() and Block::data().
+    std::atomic<int> block_calls{0};
+    std::atomic<int> get_block_old2_calls{0};
+    std::atomic<int> block_data_calls{0};
+    //! Number of calls to the header and merkle path getters of Block and of
+    //! BlockTemplate.
+    std::atomic<int> block_header_calls{0};
+    std::atomic<int> block_merkle_path_calls{0};
+    std::atomic<int> template_header_calls{0};
+    std::atomic<int> template_merkle_path_calls{0};
+    //! Number of Block handles that have not been destroyed.
+    std::atomic<int> blocks_alive{0};
+    //! Template provider mutex that must not be held while templates are
+    //! destroyed, because their destruction waits for an IPC reply.
+    std::atomic<Mutex*> tp_mutex{nullptr};
+    //! Number of destroyed templates, and how many of those were destroyed
+    //! while tp_mutex was held.
+    std::atomic<int> templates_destroyed{0};
+    std::atomic<int> templates_destroyed_under_tp_mutex{0};
+    //! Number of Block handles destroyed while tp_mutex was held.
+    std::atomic<int> blocks_destroyed_under_tp_mutex{0};
     //! When non-zero, createNewBlock() throws if block_reserved_weight exceeds
     //! it, like Bitcoin Core v32 does for a node's -blockmaxweight.
     uint64_t max_reserved_weight GUARDED_BY(m){0};
@@ -72,28 +94,52 @@ struct MockState {
     uint64_t wait_interrupt_generation{0};
 };
 
+class MockBlock : public interfaces::Block {
+public:
+    explicit MockBlock(std::shared_ptr<MockState> st, CBlock block);
+    ~MockBlock() override;
+    CBlockHeader header() override;
+    CBlock data() override;
+    std::vector<uint256> coinbaseMerklePath() override;
+
+private:
+    std::shared_ptr<MockState> state;
+    const CBlock m_block;
+};
+
+//! Implements both the current and the older methods. TPTester simulates
+//! which ones the node has.
 class MockBlockTemplate : public interfaces::BlockTemplate {
 public:
     explicit MockBlockTemplate(std::shared_ptr<MockState> st, uint256 prev, std::vector<CTransactionRef> txs, uint64_t seq, CAmount total_fees);
+    ~MockBlockTemplate() override;
 
     // Accessor for tests (future use). Keeps sequence from being flagged unused.
     uint64_t sequence() const { return m_sequence; }
 
-    CBlockHeader getBlockHeader() override;
-    CBlock getBlock() override;
+    CBlockHeader getBlockHeaderOld1() override;
+    std::unique_ptr<interfaces::Block> block() override;
+    CBlock getBlockOld2() override;
     std::vector<CAmount> getTxFees() override;
     std::vector<int64_t> getTxSigops() override;
     node::CoinbaseTx getCoinbaseTx() override;
-    std::vector<uint256> getCoinbaseMerklePath() override;
-    bool submitSolution(uint32_t, uint32_t, uint32_t, CTransactionRef, std::string&, std::string&) override;
+    std::vector<uint256> getCoinbaseMerklePathOld6() override;
+    std::unique_ptr<interfaces::Block> submitSolution(uint32_t, uint32_t, uint32_t, CTransactionRef, bool&, std::string&, std::string&) override;
+    bool submitSolutionOld10(uint32_t, uint32_t, uint32_t, CTransactionRef, std::string&, std::string&) override;
     bool submitSolutionOld7(uint32_t, uint32_t, uint32_t, CTransactionRef) override;
 
     std::unique_ptr<interfaces::BlockTemplate> waitNext(node::BlockWaitOptions options = {}) override;
     void interruptWait() override;
 
 private:
+    //! The template block with the solution applied.
+    CBlock SolvedBlock(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase) const;
+
     std::shared_ptr<MockState> state;
-    CBlock block;
+    CBlock m_block;
+    //! Like older nodes, getBlockOld2() returns the block from the last
+    //! submitSolutionOld7() or submitSolutionOld10() call. Guarded by state->m.
+    std::optional<CBlock> m_submitted_block;
     uint64_t m_sequence{0}; // internal sequence number (not exposed yet, reserved for future assertions)
 
     // The mock tracks only aggregate template fees, enough for the SV2
@@ -111,8 +157,10 @@ public:
     std::unique_ptr<interfaces::BlockTemplate> createNewBlock(const node::BlockCreateOptions&, bool cooldown) override;
     void interrupt() override;
     bool checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) override;
-    bool submitBlock(const CBlock&, std::string&, std::string&) override;
+    std::unique_ptr<interfaces::Block> submitBlock(const CBlock&, bool&, std::string&, std::string&) override;
+    bool submitBlockOld7(const CBlock&, std::string&, std::string&) override;
     std::vector<CTransactionRef> getTransactionsByTxID(const std::vector<Txid>&) override;
+    std::vector<CTransactionRef> getTransactionsByWitnessID(const std::vector<Wtxid>&) override;
 
     // Accessors for tests (thread-safe)
     uint64_t GetTemplateSeq();

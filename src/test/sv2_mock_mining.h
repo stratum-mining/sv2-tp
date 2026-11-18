@@ -55,6 +55,12 @@ struct MockState {
     std::atomic<int> block_calls{0};
     std::atomic<int> get_block_old2_calls{0};
     std::atomic<int> block_data_calls{0};
+    //! Number of calls to the header and merkle path getters of Block and of
+    //! BlockTemplate.
+    std::atomic<int> block_header_calls{0};
+    std::atomic<int> block_merkle_path_calls{0};
+    std::atomic<int> template_header_calls{0};
+    std::atomic<int> template_merkle_path_calls{0};
     //! Number of Block handles that have not been destroyed.
     std::atomic<int> blocks_alive{0};
     //! When non-zero, createNewBlock() throws if block_reserved_weight exceeds
@@ -83,7 +89,9 @@ class MockBlock : public interfaces::Block {
 public:
     explicit MockBlock(std::shared_ptr<MockState> st, CBlock block);
     ~MockBlock() override;
+    CBlockHeader header() override;
     CBlock data() override;
+    std::vector<uint256> coinbaseMerklePath() override;
 
 private:
     std::shared_ptr<MockState> state;
@@ -99,13 +107,13 @@ public:
     // Accessor for tests (future use). Keeps sequence from being flagged unused.
     uint64_t sequence() const { return m_sequence; }
 
-    CBlockHeader getBlockHeader() override;
+    CBlockHeader getBlockHeaderOld1() override;
     std::unique_ptr<interfaces::Block> block() override;
     CBlock getBlockOld2() override;
     std::vector<CAmount> getTxFees() override;
     std::vector<int64_t> getTxSigops() override;
     node::CoinbaseTx getCoinbaseTx() override;
-    std::vector<uint256> getCoinbaseMerklePath() override;
+    std::vector<uint256> getCoinbaseMerklePathOld6() override;
     std::unique_ptr<interfaces::Block> submitSolution(uint32_t, uint32_t, uint32_t, CTransactionRef, bool&, std::string&, std::string&) override;
     bool submitSolutionOld10(uint32_t, uint32_t, uint32_t, CTransactionRef, std::string&, std::string&) override;
     bool submitSolutionOld7(uint32_t, uint32_t, uint32_t, CTransactionRef) override;

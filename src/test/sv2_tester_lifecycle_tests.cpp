@@ -97,8 +97,10 @@ BOOST_AUTO_TEST_CASE(old_node_lacks_newer_methods)
     const auto not_implemented{[](const ipc::Exception& e) {
         return std::string_view{e.what()}.find("Method not implemented.") != std::string_view::npos;
     }};
+    bool accepted;
     std::string reason, debug;
-    BOOST_CHECK_EXCEPTION(tester.m_mining_proxy->submitBlock(CBlock{}, reason, debug), ipc::Exception, not_implemented);
+    BOOST_CHECK_EXCEPTION(tester.m_mining_proxy->submitBlockOld7(CBlock{}, reason, debug), ipc::Exception, not_implemented);
+    BOOST_CHECK_EXCEPTION(tester.m_mining_proxy->submitBlock(CBlock{}, accepted, reason, debug), ipc::Exception, not_implemented);
     BOOST_CHECK_EXCEPTION(tester.m_mining_proxy->getTransactionsByTxID({}), ipc::Exception, not_implemented);
     BOOST_CHECK_EXCEPTION(tester.m_mining_proxy->getTransactionsByWitnessID({}), ipc::Exception, not_implemented);
     // The methods it does have still reach the node.

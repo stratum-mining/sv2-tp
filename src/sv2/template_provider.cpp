@@ -195,7 +195,7 @@ void Sv2TemplateProvider::Interrupt()
         try {
             LOCK(m_tp_mutex);
             for (auto& t : GetBlockTemplates()) {
-                t.second.second->interruptWait();
+                t.second.block_template->interruptWait();
             }
         } catch (const ipc::Exception& e) {
             LogPrintf("Unable to interrupt block-template wait: %s\n", e.what());
@@ -431,7 +431,7 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                 LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "Assemble template: %.2fms\n",
                     Ticks<MillisecondsDouble>(SteadyClock::now() - time_start));
 
-                std::unique_ptr<interfaces::Block> block{TemplateBlock(*block_template)};
+                const std::shared_ptr<interfaces::Block> block{TemplateBlock(*block_template)};
                 const CBlockHeader header{block ? block->header() : block_template->getBlockHeaderOld1()};
                 prev_hash = header.hashPrevBlock;
                 {
@@ -444,7 +444,7 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
 
                     // Add template to cache before sending it, to prevent race
                     // condition: https://github.com/stratum-mining/stratum/issues/1773
-                    m_block_template_cache.insert({template_id,std::make_pair(prev_hash, block_template)});
+                    m_block_template_cache.insert({template_id, CachedTemplate{prev_hash, block_template, block}});
                 }
 
                 {
@@ -463,8 +463,6 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                         client->m_disconnect_flag = true;
                     }
                 }
-                // Release the handle, now that the template has been sent.
-                block.reset();
 
                 timer.reset();
             }
@@ -512,7 +510,7 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
             // After timeout and during node shutdown this is expect to not be set
             if (tmpl) {
                 block_template = tmpl;
-                std::unique_ptr<interfaces::Block> block{TemplateBlock(*block_template)};
+                const std::shared_ptr<interfaces::Block> block{TemplateBlock(*block_template)};
                 const CBlockHeader header{block ? block->header() : block_template->getBlockHeaderOld1()};
                 const uint256 new_prev_hash{header.hashPrevBlock};
 
@@ -544,7 +542,7 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
 
                     // Add template to cache before sending it, to prevent race
                     // condition: https://github.com/stratum-mining/stratum/issues/1773
-                    m_block_template_cache.insert({template_id, std::make_pair(new_prev_hash,block_template)});
+                    m_block_template_cache.insert({template_id, CachedTemplate{new_prev_hash, block_template, block}});
                 }
 
                 {
@@ -569,8 +567,6 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                         client->m_disconnect_flag = true;
                     }
                 }
-                // Release the handle, now that the template has been sent.
-                block.reset();
 
                 timer.reset();
             }
@@ -607,6 +603,7 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
 void Sv2TemplateProvider::RequestTransactionData(Sv2Client& client, node::Sv2RequestTransactionDataMsg msg)
 {
     std::shared_ptr<BlockTemplate> block_template;
+    std::shared_ptr<interfaces::Block> block_handle;
     {
         LOCK(m_tp_mutex);
         auto cached_block = m_block_template_cache.find(msg.m_template_id);
@@ -620,7 +617,7 @@ void Sv2TemplateProvider::RequestTransactionData(Sv2Client& client, node::Sv2Req
 
             return;
         }
-        const uint256& prev_hash{cached_block->second.first};
+        const uint256& prev_hash{cached_block->second.prev_hash};
 
         auto recent = GetTime<std::chrono::seconds>() - std::chrono::seconds(STALE_TEMPLATE_GRACE_PERIOD);
         if (prev_hash != m_best_prev_hash && m_last_block_time < recent) {
@@ -633,13 +630,13 @@ void Sv2TemplateProvider::RequestTransactionData(Sv2Client& client, node::Sv2Req
             client.m_send_messages.emplace_back(request_tx_data_error);
             return;
         }
-        block_template = cached_block->second.second;
+        block_template = cached_block->second.block_template;
+        block_handle = cached_block->second.block;
     }
 
-    // Fetch the block without holding m_tp_mutex, using the method that
-    // DetectTemplateInterface() found. The Block handle is released as soon
-    // as its data is read.
-    const CBlock block{m_node_version >= NODE_VERSION_33_00 ? block_template->block()->data() : block_template->getBlockOld2()};
+    // Fetch the block without holding m_tp_mutex. Older nodes have no Block
+    // handle.
+    const CBlock block{block_handle ? block_handle->data() : block_template->getBlockOld2()};
 
     std::vector<CTransactionRef> txs;
     if (block.vtx.size() > 0) {
@@ -694,7 +691,7 @@ void Sv2TemplateProvider::SubmitSolution(node::Sv2SubmitSolutionMsg solution)
              * on the network. In case of a reorg the node will be able to switch
              * faster because it already has (but not fully validated) the block.
              */
-            block_template = cached_block_template->second.second;
+            block_template = cached_block_template->second.block_template;
         }
 
         // Submit the solution to construct and process the block, using the
@@ -785,7 +782,7 @@ Sv2TemplateProvider::BlockTemplateCache Sv2TemplateProvider::PruneBlockTemplateC
     // If the blocks prevout is not the tip's prevout, delete it.
     for (auto it{m_block_template_cache.begin()}; it != m_block_template_cache.end();) {
         auto next{std::next(it)};
-        if (it->second.first != m_best_prev_hash) {
+        if (it->second.prev_hash != m_best_prev_hash) {
             LogTrace(BCLog::SV2, "Prune stale template id=%lu (%zus after new tip)", it->first, STALE_TEMPLATE_GRACE_PERIOD);
             pruned.insert(m_block_template_cache.extract(it));
         }

@@ -62,7 +62,14 @@ MockBlock::MockBlock(std::shared_ptr<MockState> st, CBlock block) : state(std::m
 {
     ++state->blocks_alive;
 }
-MockBlock::~MockBlock() { --state->blocks_alive; }
+MockBlock::~MockBlock()
+{
+    --state->blocks_alive;
+    if (Mutex* tp_mutex{state->tp_mutex}) {
+        TRY_LOCK(*tp_mutex, lock);
+        if (!lock) ++state->blocks_destroyed_under_tp_mutex;
+    }
+}
 CBlockHeader MockBlock::header()
 {
     ++state->block_header_calls;

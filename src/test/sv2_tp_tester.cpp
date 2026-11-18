@@ -55,7 +55,11 @@ public:
     VersionedBlockTemplate(std::unique_ptr<interfaces::BlockTemplate> block_template, MockNodeVersion version)
         : m_template{std::move(block_template)}, m_version{version} {}
 
-    CBlockHeader getBlockHeader() override { return m_template->getBlockHeader(); }
+    CBlockHeader getBlockHeaderOld1() override
+    {
+        if (m_version == MockNodeVersion::CURRENT) NotSupported("getBlockHeader (@1)");
+        return m_template->getBlockHeaderOld1();
+    }
     std::unique_ptr<interfaces::Block> block() override
     {
         if (m_version != MockNodeVersion::CURRENT) NotImplemented();
@@ -69,7 +73,11 @@ public:
     std::vector<CAmount> getTxFees() override { return m_template->getTxFees(); }
     std::vector<int64_t> getTxSigops() override { return m_template->getTxSigops(); }
     node::CoinbaseTx getCoinbaseTx() override { return m_template->getCoinbaseTx(); }
-    std::vector<uint256> getCoinbaseMerklePath() override { return m_template->getCoinbaseMerklePath(); }
+    std::vector<uint256> getCoinbaseMerklePathOld6() override
+    {
+        if (m_version == MockNodeVersion::CURRENT) NotSupported("getCoinbaseMerklePath (@6)");
+        return m_template->getCoinbaseMerklePathOld6();
+    }
     std::unique_ptr<interfaces::Block> submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase, bool& accepted, std::string& reason, std::string& debug) override
     {
         if (m_version != MockNodeVersion::CURRENT) NotImplemented();

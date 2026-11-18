@@ -36,8 +36,18 @@ class Block
 public:
     virtual ~Block() = default;
 
+    //! Return the block header.
+    virtual CBlockHeader header() = 0;
+
     //! Return the full block.
     virtual CBlock data() = 0;
+
+    /**
+     * Compute merkle path to the coinbase transaction
+     *
+     * @return merkle path ordered from the deepest
+     */
+    virtual std::vector<uint256> coinbaseMerklePath() = 0;
 };
 
 //! Block template interface
@@ -46,7 +56,12 @@ class BlockTemplate
 public:
     virtual ~BlockTemplate() = default;
 
-    virtual CBlockHeader getBlockHeader() = 0;
+    /**
+     * Older version of Block::header() (mining.capnp @1), as used by Bitcoin
+     * Core v31 and v32. Nodes that have the newer method throw when this is
+     * called.
+     */
+    virtual CBlockHeader getBlockHeaderOld1() = 0;
 
     /**
      * Return the template block. It contains a dummy coinbase transaction
@@ -78,11 +93,11 @@ public:
     virtual node::CoinbaseTx getCoinbaseTx() = 0;
 
     /**
-     * Compute merkle path to the coinbase transaction
-     *
-     * @return merkle path ordered from the deepest
+     * Older version of Block::coinbaseMerklePath() (mining.capnp @6), as used
+     * by Bitcoin Core v31 and v32. Nodes that have the newer method throw when
+     * this is called.
      */
-    virtual std::vector<uint256> getCoinbaseMerklePath() = 0;
+    virtual std::vector<uint256> getCoinbaseMerklePathOld6() = 0;
 
     /**
      * Construct and broadcast a block from a copy of the template,

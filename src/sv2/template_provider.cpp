@@ -373,7 +373,7 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
         };
 
         std::shared_ptr<BlockTemplate> block_template;
-        // Cache most recent block_template->getBlockHeader().hashPrevBlock result.
+        // hashPrevBlock of the most recent template.
         uint256 prev_hash;
 
         // Track the coinbase constraints generation that was active when block_template was built.
@@ -430,7 +430,9 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                 LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "Assemble template: %.2fms\n",
                     Ticks<MillisecondsDouble>(SteadyClock::now() - time_start));
 
-                prev_hash = block_template->getBlockHeader().hashPrevBlock;
+                std::unique_ptr<interfaces::Block> block{TemplateBlock(*block_template)};
+                const CBlockHeader header{block ? block->header() : block_template->getBlockHeaderOld1()};
+                prev_hash = header.hashPrevBlock;
                 {
                     LOCK(m_tp_mutex);
                     if (prev_hash != m_best_prev_hash) {
@@ -453,13 +455,15 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                         block_template = nullptr;
                         continue;
                     }
-                    if (!SendWork(*client, template_id, *block_template, /*future_template=*/true)) {
+                    if (!SendWork(*client, template_id, *block_template, block.get(), header, /*future_template=*/true)) {
                         LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "Disconnecting client id=%zu\n",
                                     client_id);
                         LOCK(client->cs_status);
                         client->m_disconnect_flag = true;
                     }
                 }
+                // Release the handle, now that the template has been sent.
+                block.reset();
 
                 timer.reset();
             }
@@ -507,7 +511,9 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
             // After timeout and during node shutdown this is expect to not be set
             if (tmpl) {
                 block_template = tmpl;
-                uint256 new_prev_hash{block_template->getBlockHeader().hashPrevBlock};
+                std::unique_ptr<interfaces::Block> block{TemplateBlock(*block_template)};
+                const CBlockHeader header{block ? block->header() : block_template->getBlockHeaderOld1()};
+                const uint256 new_prev_hash{header.hashPrevBlock};
 
                 // Compare against the handler-local prev_hash, not the shared
                 // m_best_prev_hash: another client handler may have already
@@ -555,13 +561,15 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                         continue;
                     }
 
-                    if (!SendWork(*client, template_id, *block_template, future_template)) {
+                    if (!SendWork(*client, template_id, *block_template, block.get(), header, future_template)) {
                         LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "Disconnecting client id=%zu\n",
                                     client_id);
                         LOCK(client->cs_status);
                         client->m_disconnect_flag = true;
                     }
                 }
+                // Release the handle, now that the template has been sent.
+                block.reset();
 
                 timer.reset();
             }
@@ -783,14 +791,20 @@ void Sv2TemplateProvider::PruneBlockTemplateCache()
     });
 }
 
-bool Sv2TemplateProvider::SendWork(Sv2Client& client, uint64_t template_id, BlockTemplate& block_template, bool future_template)
+std::unique_ptr<interfaces::Block> Sv2TemplateProvider::TemplateBlock(BlockTemplate& block_template)
 {
-    CBlockHeader header{block_template.getBlockHeader()};
+    // Use the interface that DetectTemplateInterface() found.
+    if (m_node_version < NODE_VERSION_33_00) return nullptr;
+    return block_template.block();
+}
+
+bool Sv2TemplateProvider::SendWork(Sv2Client& client, uint64_t template_id, BlockTemplate& block_template, interfaces::Block* block, const CBlockHeader& header, bool future_template)
+{
     node::CoinbaseTx coinbase{block_template.getCoinbaseTx()};
 
     node::Sv2NewTemplateMsg new_template{header,
                                          coinbase,
-                                         block_template.getCoinbaseMerklePath(),
+                                         block ? block->coinbaseMerklePath() : block_template.getCoinbaseMerklePathOld6(),
                                          template_id,
                                          future_template};
 

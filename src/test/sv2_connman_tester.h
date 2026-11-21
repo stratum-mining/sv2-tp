@@ -30,8 +30,14 @@ public:
     std::unique_ptr<Sv2Connman> m_connman; //!< Sv2Connman being tested
     std::atomic<size_t> m_submit_solution_count{0}; //!< Number of SubmitSolution messages forwarded to us
     std::atomic<size_t> m_request_transaction_data_count{0}; //!< Number of RequestTransactionData messages forwarded to us
+    std::atomic<size_t> m_propose_template_count{0}; //!< Number of ProposeTemplate messages forwarded to us
+    std::atomic<size_t> m_provide_missing_transactions_count{0}; //!< Number of ProvideMissingTransactions.Success messages forwarded to us
 
-    explicit ConnTester(size_t max_connections = DEFAULT_MAX_SV2_CONNECTIONS);
+    /**
+     * @param[in] max_connections maximum number of clients the connman accepts
+     * @param[in] supported_flags SetupConnection flags the connman accepts
+     */
+    explicit ConnTester(size_t max_connections = DEFAULT_MAX_SV2_CONNECTIONS, uint32_t supported_flags = 0);
     ~ConnTester();
 
     void RemoteToLocalBytes();
@@ -60,6 +66,8 @@ public:
 
     void RequestTransactionData(Sv2Client& client, node::Sv2RequestTransactionDataMsg msg) override;
     void SubmitSolution(node::Sv2SubmitSolutionMsg solution) override;
+    void ProposeTemplate(Sv2Client& client, node::Sv2ProposeTemplateMsg msg) override;
+    void ProvideMissingTransactions(Sv2Client& client, node::Sv2ProvideMissingTransactionsSuccessMsg msg) override;
 };
 
 #endif // BITCOIN_TEST_SV2_CONNMAN_TESTER_H

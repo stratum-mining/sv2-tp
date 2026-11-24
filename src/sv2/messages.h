@@ -84,6 +84,31 @@ struct Sv2Bytes64KFormatter
     }
 };
 
+/**
+ * Formatter for the B0_16M type: a three-byte little-endian length followed by
+ * that many bytes.
+ */
+struct Sv2Bytes16MFormatter
+{
+    template <typename Stream, typename V>
+    void Ser(Stream& s, const V& v)
+    {
+        if (v.size() > 0xffffff) throw std::ios_base::failure("B0_16M length limit exceeded");
+        const auto size{static_cast<uint32_t>(v.size())};
+        s << static_cast<uint8_t>(size) << static_cast<uint8_t>(size >> 8) << static_cast<uint8_t>(size >> 16);
+        if (!v.empty()) s.write(MakeByteSpan(v));
+    }
+
+    template <typename Stream, typename V>
+    void Unser(Stream& s, V& v)
+    {
+        u24_t size;
+        s >> size;
+        v.resize(size[0] | size[1] << 8 | size[2] << 16);
+        if (!v.empty()) s.read(MakeWritableByteSpan(v));
+    }
+};
+
 /** Formatter for the SEQ0_255 type: a one-byte element count followed by the elements. */
 struct Sv2Seq255Formatter
 {
@@ -537,15 +562,7 @@ struct Sv2RequestTransactionDataSuccessMsg
         for (const auto& tx : m_transactions_list) {
             DataStream ss_tx{};
             ss_tx << TX_WITH_WITNESS(*tx);
-            auto tx_size = static_cast<uint32_t>(ss_tx.size());
-
-            u24_t tx_byte_len;
-            tx_byte_len[2] = (tx_size >> 16) & 0xff;
-            tx_byte_len[1] = (tx_size >> 8) & 0xff;
-            tx_byte_len[0] = tx_size & 0xff;
-
-            s << tx_byte_len;
-            s.write(MakeByteSpan(ss_tx));
+            s << Using<Sv2Bytes16MFormatter>(ss_tx);
         }
     };
 };

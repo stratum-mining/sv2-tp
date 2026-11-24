@@ -451,4 +451,87 @@ BOOST_AUTO_TEST_CASE(Sv2_B0_64K_message_limit_test)
     const node::Sv2RequestTransactionDataSuccessMsg too_long{1, std::vector<uint8_t>(65536), {}};
     BOOST_CHECK_THROW(DataStream{} << too_long, std::ios_base::failure);
 }
+
+BOOST_AUTO_TEST_CASE(Sv2RequestTransactionDataSuccess_test)
+{
+    CMutableTransaction mtx;
+    mtx.vin.resize(1);
+    mtx.vin[0].scriptWitness.stack.emplace_back(0x0102, uint8_t{0x42}); // makes the length need two bytes
+    mtx.vout.emplace_back(CAmount{1}, CScript{} << OP_TRUE);
+    const CTransactionRef tx{MakeTransactionRef(mtx)};
+    DataStream tx_stream{};
+    tx_stream << TX_WITH_WITNESS(*tx);
+    BOOST_REQUIRE_EQUAL(tx_stream.size(), 0x0145);
+
+    DataStream ss{};
+    ss << node::Sv2RequestTransactionDataSuccessMsg{7, {0xaa, 0xbb}, {tx, tx}};
+
+    // U64               0700000000000000  template_id
+    // B0_64K            0200 aabb         excess_data
+    // SEQ0_64K[B0_16M]  0200              transaction count
+    //                   450100 ...        first transaction
+    //                   450100 ...        second transaction
+    const std::string tx_hex{"450100" + HexStr(tx_stream)};
+    BOOST_CHECK_EQUAL(HexStr(ss), "0700000000000000" "0200aabb" "0200" + tx_hex + tx_hex);
+}
+
+BOOST_AUTO_TEST_CASE(Sv2Bytes16M_test)
+{
+    // Round trip, with a length that needs all three bytes
+    {
+        std::vector<uint8_t> bytes(0x010203);
+        for (size_t i{0}; i < bytes.size(); ++i) bytes[i] = uint8_t(i);
+
+        DataStream ss{};
+        ss << Using<node::Sv2Bytes16MFormatter>(bytes);
+        BOOST_CHECK_EQUAL(ss.size(), 3 + bytes.size());
+        BOOST_CHECK_EQUAL(HexStr(std::span{ss}.first(5)), "0302010001");
+
+        std::vector<uint8_t> read;
+        ss >> Using<node::Sv2Bytes16MFormatter>(read);
+        BOOST_CHECK(read == bytes);
+        BOOST_CHECK(ss.empty());
+    }
+
+    // Empty
+    {
+        DataStream ss{};
+        ss << Using<node::Sv2Bytes16MFormatter>(std::vector<uint8_t>{});
+        BOOST_CHECK_EQUAL(HexStr(ss), "000000");
+
+        std::vector<uint8_t> read{0x01};
+        ss >> Using<node::Sv2Bytes16MFormatter>(read);
+        BOOST_CHECK(read.empty());
+        BOOST_CHECK(ss.empty());
+    }
+
+    // Largest length that fits
+    {
+        const std::vector<uint8_t> bytes(0xffffff, 0x42);
+        DataStream ss{};
+        ss << Using<node::Sv2Bytes16MFormatter>(bytes);
+        BOOST_CHECK_EQUAL(ss.size(), 3 + 0xffffff);
+        BOOST_CHECK_EQUAL(HexStr(std::span{ss}.first(3)), "ffffff");
+
+        std::vector<uint8_t> read;
+        ss >> Using<node::Sv2Bytes16MFormatter>(read);
+        BOOST_CHECK(read == bytes);
+        BOOST_CHECK(ss.empty());
+    }
+
+    // One more does not fit, and nothing is written
+    {
+        DataStream ss{};
+        BOOST_CHECK_THROW(ss << Using<node::Sv2Bytes16MFormatter>(std::vector<uint8_t>(0x1000000)), std::ios_base::failure);
+        BOOST_CHECK(ss.empty());
+    }
+
+    // Fewer bytes than the length announces
+    {
+        DataStream ss{};
+        ss << uint8_t{3} << uint8_t{0} << uint8_t{0} << uint8_t{0xaa} << uint8_t{0xbb};
+        std::vector<uint8_t> read;
+        BOOST_CHECK_THROW(ss >> Using<node::Sv2Bytes16MFormatter>(read), std::ios_base::failure);
+    }
+}
 BOOST_AUTO_TEST_SUITE_END()

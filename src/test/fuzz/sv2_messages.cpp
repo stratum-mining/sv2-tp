@@ -204,10 +204,19 @@ FUZZ_TARGET(sv2_submit_solution, .init = Sv2FuzzInitialize)
     ss << provider.ConsumeIntegral<uint32_t>(); // m_ntime
     ss << provider.ConsumeIntegral<uint32_t>(); // m_nonce
 
-    // Fuzzed coinbase transaction bytes (with 2-byte length prefix)
+    // Fuzzed coinbase transaction bytes, as a B0_64K. The length is either
+    // correct or fuzzed as well.
     size_t tx_len = provider.ConsumeIntegralInRange<size_t>(0, 10000);
+    const bool fuzz_announced_len{provider.ConsumeBool()};
+    const uint16_t fuzzed_len{provider.ConsumeIntegral<uint16_t>()};
     auto tx_bytes = provider.ConsumeBytes<uint8_t>(tx_len);
-    ss << Using<node::Sv2Bytes64KFormatter>(tx_bytes);
+    const size_t announced_len{fuzz_announced_len ? fuzzed_len : tx_bytes.size()};
+    if (fuzz_announced_len) {
+        ss << fuzzed_len;
+        ss.write(MakeByteSpan(tx_bytes));
+    } else {
+        ss << Using<node::Sv2Bytes64KFormatter>(tx_bytes);
+    }
 
     try {
         Sv2SubmitSolutionMsg msg;
@@ -218,9 +227,15 @@ FUZZ_TARGET(sv2_submit_solution, .init = Sv2FuzzInitialize)
         (void)msg.m_version;
         (void)msg.m_ntime;
         (void)msg.m_nonce;
-        (void)msg.m_coinbase_tx;
+
+        // The coinbase transaction fills exactly the announced length
+        DataStream tx_stream{};
+        tx_stream << TX_WITH_WITNESS(msg.m_coinbase_tx);
+        assert(tx_stream.size() == announced_len);
+        assert(announced_len <= tx_bytes.size());
     } catch (const std::ios_base::failure&) {
-        // Stream read failures are expected for malformed transactions
+        // Stream read failures are expected for malformed transactions and
+        // for a length that does not match the transaction
     }
 }
 

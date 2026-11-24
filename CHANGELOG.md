@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+#### Fixed
+ - Module `silentpayments`: `secp256k1_silentpayments_sender_create_outputs` and `secp256k1_silentpayments_recipient_prevouts_summary_create` no longer require empty key arrays to be passed as `NULL`. If the corresponding size argument is 0, the array pointer is ignored. This matches the API documentation, which only states that unused arrays *can* be `NULL`, and spares callers from special-casing empty arrays.
+ - Module `silentpayments`: `secp256k1_silentpayments_recipient_prevouts_summary_create` and `secp256k1_silentpayments_recipient_scan_outputs` now return 0 when called with no input public keys or no taproot outputs, respectively, instead of treating this as an illegal argument (which by default calls `abort()`). In addition, `secp256k1_silentpayments_recipient_scan_outputs` no longer requires `tx_outputs` and `found_outputs` to be non-`NULL` if `n_tx_outputs` is 0. This matches the API documentation, which states that 0 is returned if the transaction is not a Silent Payments transaction, and allows callers to pass transactions without eligible inputs or without taproot outputs as is.
+
 ## [0.8.0] - 2026-08-03
 
 #### Added
@@ -223,6 +229,7 @@ This version was in fact never released.
 The number was given by the build system since the introduction of autotools in Jan 2014 (ea0fe5a5bf0c04f9cc955b2966b614f5f378c6f6).
 Therefore, this version number does not uniquely identify a set of source files.
 
+[Unreleased]: https://github.com/bitcoin-core/secp256k1/compare/v0.8.0...HEAD
 [0.8.0]: https://github.com/bitcoin-core/secp256k1/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/bitcoin-core/secp256k1/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/bitcoin-core/secp256k1/compare/v0.6.0...v0.7.0

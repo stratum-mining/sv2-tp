@@ -186,6 +186,7 @@ std::unique_ptr<interfaces::BlockTemplate> MockMining::createNewBlock(const node
 {
     WAIT_LOCK(state->m, lock);
     state->create_weights.push_back(options.block_reserved_weight);
+    state->create_sigops.push_back(options.coinbase_output_max_additional_sigops);
     state->cv.notify_all();
     // Bound the pause so a failing test can't leave fixture teardown waiting forever.
     if (!state->cv.wait_for(lock, std::chrono::seconds{5}, [&]() EXCLUSIVE_LOCKS_REQUIRED(state->m) {
@@ -228,6 +229,12 @@ std::vector<uint64_t> MockMining::GetCreateWeights()
 {
     LOCK(state->m);
     return state->create_weights;
+}
+
+std::vector<uint64_t> MockMining::GetCreateSigops()
+{
+    LOCK(state->m);
+    return state->create_sigops;
 }
 
 void MockMining::PauseCreate(bool pause)

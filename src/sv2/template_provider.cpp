@@ -339,7 +339,9 @@ void Sv2TemplateProvider::ThreadSv2ClientHandler(size_t client_id)
                 options.block_reserved_weight = static_cast<size_t>(std::max<uint64_t>(
                     node::MIN_BLOCK_RESERVED_WEIGHT,
                     node::ReservedWeightForCoinbaseOutputs(client->m_coinbase_tx_outputs_size)));
-                // Snapshot the generation with the size, before the IPC call.
+                // The node counts sigops like the client does, so no conversion is needed.
+                options.coinbase_output_max_additional_sigops = client->m_coinbase_tx_outputs_sigops;
+                // Snapshot the generation with the constraints, before the IPC call.
                 constraints_generation = client->m_coinbase_constraints_generation.load();
             }
             return true;

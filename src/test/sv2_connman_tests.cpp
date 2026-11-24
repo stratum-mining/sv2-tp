@@ -381,15 +381,28 @@ BOOST_AUTO_TEST_CASE(coinbase_output_constraints_set_after_validation)
     }
     BOOST_CHECK_EQUAL(rejected.m_coinbase_constraints_generation.load(), 0U);
 
-    node::Sv2NetMsg constraints{node::Sv2MsgType::COINBASE_OUTPUT_CONSTRAINTS, {0x01, 0x00, 0x00, 0x00, 0x00, 0x00}};
+    node::Sv2NetMsg constraints{node::Sv2MsgType::COINBASE_OUTPUT_CONSTRAINTS, {0x01, 0x00, 0x00, 0x00, 0x02, 0x01}};
     tester.m_connman->ProcessSv2Message(constraints, accepted);
     {
         LOCK(accepted.cs_status);
         BOOST_CHECK(!accepted.m_disconnect_flag);
         BOOST_CHECK(accepted.m_coinbase_output_constraints_recv);
         BOOST_CHECK_EQUAL(accepted.m_coinbase_tx_outputs_size, 1U);
+        BOOST_CHECK_EQUAL(accepted.m_coinbase_tx_outputs_sigops, 258U);
     }
     BOOST_CHECK_EQUAL(accepted.m_coinbase_constraints_generation.load(), 1U);
+
+    // The sigops field was added to the spec in March 2025. An older client,
+    // such as SRI before v1.3.0, sends only the size. The message is still
+    // accepted and the default of 400 sigops is used.
+    node::Sv2NetMsg without_sigops{node::Sv2MsgType::COINBASE_OUTPUT_CONSTRAINTS, {0x01, 0x00, 0x00, 0x00}};
+    tester.m_connman->ProcessSv2Message(without_sigops, accepted);
+    {
+        LOCK(accepted.cs_status);
+        BOOST_CHECK(!accepted.m_disconnect_flag);
+        BOOST_CHECK_EQUAL(accepted.m_coinbase_tx_outputs_sigops, 400U);
+    }
+    BOOST_CHECK_EQUAL(accepted.m_coinbase_constraints_generation.load(), 2U);
 }
 
 // A client whose socket send fails must be removed.

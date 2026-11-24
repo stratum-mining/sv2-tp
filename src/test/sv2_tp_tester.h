@@ -81,7 +81,7 @@ public:
     /** Send SetupConnection and verify Success reply. */
     void SendSetupConnection(size_t peer_id = 0);
     /** Send CoinbaseOutputConstraints message. */
-    void SendCoinbaseOutputConstraints(size_t peer_id = 0, uint32_t max_additional_size = 1);
+    void SendCoinbaseOutputConstraints(size_t peer_id = 0, uint32_t max_additional_size = 1, uint16_t max_additional_sigops = 0);
     /** Send SubmitSolution for template_id with the given coinbase. */
     void SendSubmitSolutionCoinbase(uint64_t template_id, const CMutableTransaction& coinbase, size_t peer_id = 0);
     /** Receive a NewTemplate + SetNewPrevHash pair and verify sizes and matching IDs. Returns the template ID. */

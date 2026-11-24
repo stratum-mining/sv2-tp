@@ -10,6 +10,7 @@
 #include <util/thread.h>
 
 #include <algorithm>
+#include <limits>
 
 using node::Sv2MsgType;
 
@@ -407,7 +408,9 @@ void Sv2Connman::ProcessSv2Message(const Sv2NetMsg& sv2_net_msg, Sv2Client& clie
         }
 
         uint32_t max_additional_size = coinbase_output_constraints.m_coinbase_output_max_additional_size;
-        LogPrintLevel(BCLog::SV2, BCLog::Level::Debug, "coinbase_output_max_additional_size=%d bytes\n", max_additional_size);
+        const uint16_t max_additional_sigops{coinbase_output_constraints.m_coinbase_output_max_additional_sigops};
+        LogPrintLevel(BCLog::SV2, BCLog::Level::Debug, "coinbase_output_max_additional_size=%d bytes, coinbase_output_max_additional_sigops=%d\n",
+                      max_additional_size, max_additional_sigops);
 
         // Bitcoin Core v32 rejects a reserved weight that can't fit in a block,
         // rather than clamping it. The node's own -blockmaxweight can't be
@@ -422,13 +425,19 @@ void Sv2Connman::ProcessSv2Message(const Sv2NetMsg& sv2_net_msg, Sv2Client& clie
             return;
         }
 
-        // Store the new size, bump constraints generation and interrupt the
-        // client handler thread's waitNext() call so it immediately rebuilds
-        // the template with the new constraints. Only a validated size marks
-        // the client as ready for templates.
+        // Bitcoin Core also rejects more sigops than fit in a block. No check
+        // is needed for that, because the field is too small to hold such a
+        // value.
+        static_assert(std::numeric_limits<decltype(max_additional_sigops)>::max() <= MAX_BLOCK_SIGOPS_COST);
+
+        // Store the new size and sigops, bump constraints generation and
+        // interrupt the client handler thread's waitNext() call so it
+        // immediately rebuilds the template with the new constraints. Only a
+        // validated size marks the client as ready for templates.
         {
             LOCK(client.cs_status);
             client.m_coinbase_tx_outputs_size = max_additional_size;
+            client.m_coinbase_tx_outputs_sigops = max_additional_sigops;
             client.m_coinbase_constraints_generation++;
             client.m_coinbase_output_constraints_recv = true;
             if (client.m_current_block_template != nullptr) {

@@ -55,6 +55,8 @@ struct MockState {
     uint64_t max_reserved_weight GUARDED_BY(m){0};
     //! block_reserved_weight of every createNewBlock() call, including ones that throw.
     std::vector<uint64_t> create_weights GUARDED_BY(m);
+    //! coinbase_output_max_additional_sigops of every createNewBlock() call, including ones that throw.
+    std::vector<uint64_t> create_sigops GUARDED_BY(m);
     //! Pause createNewBlock() after recording its options, until resumed or shut down.
     bool pause_create GUARDED_BY(m){false};
     //! Mining::interrupt() cancels template creation, but not waitNext().
@@ -118,6 +120,7 @@ public:
     uint64_t GetTemplateSeq();
     uint64_t GetHeight();
     std::vector<uint64_t> GetCreateWeights();
+    std::vector<uint64_t> GetCreateSigops();
     //! Pause or resume createNewBlock() after it records the requested options.
     void PauseCreate(bool pause);
     //! Wait for direct createNewBlock() calls, including paused or rejected calls.

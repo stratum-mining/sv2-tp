@@ -6,6 +6,7 @@
 
 #include <interfaces/mining.h>
 #include <ipc/exception.h>
+#include <primitives/block.h>
 #include <sv2/block_options.h>
 #include <sv2/template_provider.h>
 #include <sync.h>
@@ -16,6 +17,7 @@
 #include <chrono>
 #include <future>
 #include <memory>
+#include <string>
 #include <string_view>
 
 /*
@@ -36,6 +38,21 @@ BOOST_AUTO_TEST_CASE(ipc_failure_reaches_caller)
     });
     tester.m_state->fail_get_tip = false;
     BOOST_CHECK(!tester.m_mining_proxy->getTip().has_value());
+}
+
+BOOST_AUTO_TEST_CASE(old_node_lacks_newer_methods)
+{
+    // A simulated Bitcoin Core v31 node, whose Mining interface ends at
+    // interrupt(), fails calls to the methods that were added later.
+    TPTester tester{Sv2TemplateProviderOptions{.is_test = true}, MockNodeVersion::V31};
+    const auto not_implemented{[](const ipc::Exception& e) {
+        return std::string_view{e.what()}.find("Method not implemented.") != std::string_view::npos;
+    }};
+    std::string reason, debug;
+    BOOST_CHECK_EXCEPTION(tester.m_mining_proxy->submitBlock(CBlock{}, reason, debug), ipc::Exception, not_implemented);
+    BOOST_CHECK_EXCEPTION(tester.m_mining_proxy->getTransactionsByTxID({}), ipc::Exception, not_implemented);
+    // The methods it does have still reach the node.
+    BOOST_CHECK(!tester.m_mining_proxy->isInitialBlockDownload());
 }
 
 BOOST_AUTO_TEST_CASE(mining_interrupt_unblocks_template_creation)

@@ -64,6 +64,7 @@ public:
     }
     bool submitBlock(const CBlock& block, std::string& reason, std::string& debug) override
     {
+        if (m_version == MockNodeVersion::V31) NotImplemented();
         return m_mining->submitBlock(block, reason, debug);
     }
     std::vector<CTransactionRef> getTransactionsByTxID(const std::vector<Txid>& txids) override

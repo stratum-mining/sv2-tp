@@ -250,7 +250,7 @@ BOOST_AUTO_TEST_CASE(client_tests)
 BOOST_AUTO_TEST_CASE(node_version_detection)
 {
     {
-        TPTester tester{Sv2TemplateProviderOptions{.is_test = true}, MockNodeVersion::CURRENT};
+        TPTester tester{Sv2TemplateProviderOptions{.is_test = true}, MockNodeVersion::V32};
         BOOST_CHECK_EQUAL(tester.m_tp->GetNodeVersion(), NODE_VERSION_32_00);
         tester.m_mining_control->Shutdown();
     }
@@ -298,7 +298,7 @@ BOOST_AUTO_TEST_CASE(submit_solution_interface_version)
         int expected_calls;      // calls to submitSolution()
         int expected_old7_calls; // calls to submitSolutionOld7()
     } cases[]{
-        {MockNodeVersion::CURRENT, "Simulate a recent node", 1, 0},
+        {MockNodeVersion::V32, "Simulate a Bitcoin Core v32 node", 1, 0},
         {MockNodeVersion::V31, "Simulate a Bitcoin Core v31 node", 0, 1},
     };
 

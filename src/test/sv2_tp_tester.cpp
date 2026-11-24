@@ -27,9 +27,15 @@ extern std::function<void(const std::string&)> G_TEST_LOG_FUN;
 #include <future>
 
 namespace {
-//! Simulates a node without getTransactionsByTxID(), by throwing the same
-//! exception the IPC layer raises for a method the other side does not
-//! implement.
+//! Throw the exception the IPC layer raises for a method the other side does
+//! not implement.
+[[noreturn]] void NotImplemented()
+{
+    throw ipc::Exception("kj::Exception: remote exception: Method not implemented.");
+}
+
+//! Simulates a node with an older mining interface, by throwing for the
+//! methods that the given version does not have, see MockNodeVersion.
 //!
 //! The mock server can't do this, because it implements every method of the
 //! current interface. Having it throw instead would not be the same thing: a
@@ -38,7 +44,7 @@ namespace {
 class OldNodeMining : public interfaces::Mining
 {
 public:
-    explicit OldNodeMining(std::unique_ptr<interfaces::Mining> mining) : m_mining{std::move(mining)} {}
+    OldNodeMining(std::unique_ptr<interfaces::Mining> mining, MockNodeVersion version) : m_mining{std::move(mining)}, m_version{version} {}
 
     bool isTestChain() override { return m_mining->isTestChain(); }
     bool isInitialBlockDownload() override { return m_mining->isInitialBlockDownload(); }
@@ -58,15 +64,23 @@ public:
     }
     bool submitBlock(const CBlock& block, std::string& reason, std::string& debug) override
     {
+        if (m_version == MockNodeVersion::V31) NotImplemented();
         return m_mining->submitBlock(block, reason, debug);
     }
-    std::vector<CTransactionRef> getTransactionsByTxID(const std::vector<Txid>&) override
+    std::vector<CTransactionRef> getTransactionsByTxID(const std::vector<Txid>& txids) override
     {
-        throw ipc::Exception("kj::Exception: remote exception: Method not implemented.");
+        if (m_version == MockNodeVersion::V31) NotImplemented();
+        return m_mining->getTransactionsByTxID(txids);
+    }
+    std::vector<CTransactionRef> getTransactionsByWitnessID(const std::vector<Wtxid>& wtxids) override
+    {
+        if (m_version == MockNodeVersion::V31) NotImplemented();
+        return m_mining->getTransactionsByWitnessID(wtxids);
     }
 
 private:
     std::unique_ptr<interfaces::Mining> m_mining;
+    const MockNodeVersion m_version;
 };
 
 } // namespace
@@ -128,8 +142,9 @@ TPTester::TPTester(Sv2TemplateProviderOptions opts, MockNodeVersion version)
     BOOST_REQUIRE(m_client_init != nullptr);
     m_mining_proxy = m_client_init->makeMining();
     BOOST_REQUIRE(m_mining_proxy != nullptr);
-    if (version == MockNodeVersion::V31) {
-        m_mining_proxy = std::make_unique<OldNodeMining>(std::move(m_mining_proxy));
+    // A v32 node has every method of the interface, so it needs no wrapper.
+    if (version != MockNodeVersion::V32) {
+        m_mining_proxy = std::make_unique<OldNodeMining>(std::move(m_mining_proxy), version);
     }
 
     // Construct Template Provider with the IPC-backed Mining proxy

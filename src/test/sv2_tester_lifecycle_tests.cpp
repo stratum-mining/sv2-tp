@@ -62,7 +62,7 @@ BOOST_AUTO_TEST_CASE(tx_lookup_returns_null_for_unknown)
     }
     interfaces::Mining& mining{*tester.m_mining_proxy};
 
-    // The result has one entry per requested txid, in the same order. A
+    // The result has one entry per requested id, in the same order. A
     // transaction the node does not have is sent as empty Data and must be
     // read back as nullptr, see CustomHasField() in ipc/capnp/common-types.h.
     const auto check{[&](const std::vector<CTransactionRef>& txs) {
@@ -76,11 +76,17 @@ BOOST_AUTO_TEST_CASE(tx_lookup_returns_null_for_unknown)
         BOOST_CHECK(!txs[3]);
     }};
 
-    // The wtxid of a transaction with a witness is not a txid.
+    // The wtxid of a transaction with a witness is not a txid, and its txid
+    // is not a wtxid.
     const Txid unknown_txid{Txid::FromUint256(uint256{1})};
     const Txid not_a_txid{Txid::FromUint256(tx_b->GetWitnessHash().ToUint256())};
     check(mining.getTransactionsByTxID({tx_b->GetHash(), unknown_txid, tx_a->GetHash(), not_a_txid}));
     BOOST_CHECK(mining.getTransactionsByTxID({}).empty());
+
+    const Wtxid unknown_wtxid{Wtxid::FromUint256(uint256{1})};
+    const Wtxid not_a_wtxid{Wtxid::FromUint256(tx_b->GetHash().ToUint256())};
+    check(mining.getTransactionsByWitnessID({tx_b->GetWitnessHash(), unknown_wtxid, tx_a->GetWitnessHash(), not_a_wtxid}));
+    BOOST_CHECK(mining.getTransactionsByWitnessID({}).empty());
 }
 
 BOOST_AUTO_TEST_CASE(old_node_lacks_newer_methods)
@@ -94,6 +100,7 @@ BOOST_AUTO_TEST_CASE(old_node_lacks_newer_methods)
     std::string reason, debug;
     BOOST_CHECK_EXCEPTION(tester.m_mining_proxy->submitBlock(CBlock{}, reason, debug), ipc::Exception, not_implemented);
     BOOST_CHECK_EXCEPTION(tester.m_mining_proxy->getTransactionsByTxID({}), ipc::Exception, not_implemented);
+    BOOST_CHECK_EXCEPTION(tester.m_mining_proxy->getTransactionsByWitnessID({}), ipc::Exception, not_implemented);
     // The methods it does have still reach the node.
     BOOST_CHECK(!tester.m_mining_proxy->isInitialBlockDownload());
 }

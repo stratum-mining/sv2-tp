@@ -221,6 +221,16 @@ std::vector<CTransactionRef> MockMining::getTransactionsByTxID(const std::vector
     }
     return result;
 }
+std::vector<CTransactionRef> MockMining::getTransactionsByWitnessID(const std::vector<Wtxid>& wtxids)
+{
+    LOCK(state->m);
+    std::vector<CTransactionRef> result;
+    for (const Wtxid& wtxid : wtxids) {
+        const auto it{std::find_if(state->txs.begin(), state->txs.end(), [&wtxid](const CTransactionRef& tx) { return tx->GetWitnessHash() == wtxid; })};
+        result.push_back(it == state->txs.end() ? nullptr : *it);
+    }
+    return result;
+}
 
 uint64_t MockMining::GetTemplateSeq()
 {

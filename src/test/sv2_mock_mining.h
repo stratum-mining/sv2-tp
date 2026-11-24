@@ -112,8 +112,9 @@ public:
     void interrupt() override;
     bool checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) override;
     bool submitBlock(const CBlock&, std::string&, std::string&) override;
-    //! Looks up txs, the transactions the mock node has in its mempool.
+    //! The lookups search txs, the transactions the mock node has in its mempool.
     std::vector<CTransactionRef> getTransactionsByTxID(const std::vector<Txid>&) override;
+    std::vector<CTransactionRef> getTransactionsByWitnessID(const std::vector<Wtxid>&) override;
 
     // Accessors for tests (thread-safe)
     uint64_t GetTemplateSeq();

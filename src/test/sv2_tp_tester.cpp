@@ -72,6 +72,11 @@ public:
         if (m_version == MockNodeVersion::V31) NotImplemented();
         return m_mining->getTransactionsByTxID(txids);
     }
+    std::vector<CTransactionRef> getTransactionsByWitnessID(const std::vector<Wtxid>& wtxids) override
+    {
+        if (m_version == MockNodeVersion::V31) NotImplemented();
+        return m_mining->getTransactionsByWitnessID(wtxids);
+    }
 
 private:
     std::unique_ptr<interfaces::Mining> m_mining;

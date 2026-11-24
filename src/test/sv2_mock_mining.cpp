@@ -10,6 +10,7 @@
 #include <sv2/messages.h>
 #include <tinyformat.h>
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace {
@@ -210,7 +211,16 @@ void MockMining::interrupt()
 }
 bool MockMining::checkBlock(const CBlock&, const node::BlockCheckOptions&, std::string&, std::string&) { return true; }
 bool MockMining::submitBlock(const CBlock&, std::string&, std::string&) { return true; }
-std::vector<CTransactionRef> MockMining::getTransactionsByTxID(const std::vector<Txid>&) { return {}; }
+std::vector<CTransactionRef> MockMining::getTransactionsByTxID(const std::vector<Txid>& txids)
+{
+    LOCK(state->m);
+    std::vector<CTransactionRef> result;
+    for (const Txid& txid : txids) {
+        const auto it{std::find_if(state->txs.begin(), state->txs.end(), [&txid](const CTransactionRef& tx) { return tx->GetHash() == txid; })};
+        result.push_back(it == state->txs.end() ? nullptr : *it);
+    }
+    return result;
+}
 
 uint64_t MockMining::GetTemplateSeq()
 {

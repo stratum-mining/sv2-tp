@@ -288,7 +288,7 @@ BOOST_AUTO_TEST_CASE(Sv2SubmitSolution_test)
         0x02, 0x00, 0x00, 0x00,                           // version
         0x97, 0x3c, 0x0e, 0x63,                           // ntime
         0xff, 0xff, 0x7f, 0x03,                           // nonce
-        0x5d, 0x00,                                       // 2 byte length of coinbase_tx
+        0x74, 0x00,                                       // 2 byte length of coinbase_tx
         0x2, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, // coinbase_tx
         0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
         0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
@@ -310,6 +310,21 @@ BOOST_AUTO_TEST_CASE(Sv2SubmitSolution_test)
     BOOST_CHECK_EQUAL(submit_solution.m_version, 2);
     BOOST_CHECK_EQUAL(submit_solution.m_ntime, 1661877399);
     BOOST_CHECK_EQUAL(submit_solution.m_nonce, 58720255);
+    BOOST_CHECK_EQUAL(submit_solution.m_coinbase_tx.vout.size(), 1);
+    BOOST_CHECK(ss.empty());
+
+    // The coinbase_tx length must match the transaction
+    constexpr size_t len_pos{8 + 4 + 4 + 4};
+    BOOST_REQUIRE_EQUAL(input[len_pos], sizeof(input) - len_pos - 2);
+    for (const int delta : {-1, 1}) {
+        std::vector<uint8_t> bad_len(std::begin(input), std::end(input));
+        bad_len[len_pos] += delta;
+        // Back the longer length with an extra byte, so that it is the
+        // transaction that falls short rather than the stream.
+        if (delta > 0) bad_len.push_back(0x00);
+        DataStream bad_ss{bad_len};
+        BOOST_CHECK_THROW(bad_ss >> submit_solution, std::ios_base::failure);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(Sv2SetupConnection_long_strings_test)
@@ -364,5 +379,174 @@ BOOST_AUTO_TEST_CASE(Sv2_length_limit_test)
     ss << Using<node::Sv2Seq255Formatter>(std::vector<uint256>(255));
     BOOST_CHECK_EQUAL(ss.size(), 1 + 255 * 32);
     BOOST_CHECK_EQUAL(uint8_t(ss[0]), 255);
+}
+
+BOOST_AUTO_TEST_CASE(Sv2Bytes64K_test)
+{
+    // Round trip, with a length that needs both bytes
+    {
+        std::vector<uint8_t> bytes(0x0102);
+        for (size_t i{0}; i < bytes.size(); ++i) bytes[i] = uint8_t(i);
+
+        DataStream ss{};
+        ss << Using<node::Sv2Bytes64KFormatter>(bytes);
+        BOOST_CHECK_EQUAL(ss.size(), 2 + bytes.size());
+        BOOST_CHECK_EQUAL(HexStr(std::span{ss}.first(4)), "02010001");
+
+        std::vector<uint8_t> read;
+        ss >> Using<node::Sv2Bytes64KFormatter>(read);
+        BOOST_CHECK(read == bytes);
+        BOOST_CHECK(ss.empty());
+    }
+
+    // Empty
+    {
+        DataStream ss{};
+        ss << Using<node::Sv2Bytes64KFormatter>(std::vector<uint8_t>{});
+        BOOST_CHECK_EQUAL(HexStr(ss), "0000");
+
+        std::vector<uint8_t> read{0x01};
+        ss >> Using<node::Sv2Bytes64KFormatter>(read);
+        BOOST_CHECK(read.empty());
+        BOOST_CHECK(ss.empty());
+    }
+
+    // Largest length that fits
+    {
+        const std::string str(65535, 's');
+        DataStream ss{};
+        ss << Using<node::Sv2Bytes64KFormatter>(str);
+        BOOST_CHECK_EQUAL(ss.size(), 2 + 65535);
+        BOOST_CHECK_EQUAL(HexStr(std::span{ss}.first(2)), "ffff");
+
+        std::string read;
+        ss >> Using<node::Sv2Bytes64KFormatter>(read);
+        BOOST_CHECK(read == str);
+        BOOST_CHECK(ss.empty());
+    }
+
+    // One more does not fit, and nothing is written
+    {
+        DataStream ss{};
+        BOOST_CHECK_THROW(ss << Using<node::Sv2Bytes64KFormatter>(std::vector<uint8_t>(65536)), std::ios_base::failure);
+        BOOST_CHECK(ss.empty());
+    }
+
+    // Fewer bytes than the length announces
+    {
+        DataStream ss{};
+        ss << uint16_t{3} << uint8_t{0xaa} << uint8_t{0xbb};
+        std::vector<uint8_t> read;
+        BOOST_CHECK_THROW(ss >> Using<node::Sv2Bytes64KFormatter>(read), std::ios_base::failure);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(Sv2_B0_64K_message_limit_test)
+{
+    // 65535 bytes of coinbase outputs fit in NewTemplate, 65536 do not:
+    // 8 byte amount + 3 byte script length + script
+    node::Sv2NewTemplateMsg new_template{};
+    new_template.m_coinbase_tx_outputs_count = 1;
+    new_template.m_coinbase_tx_outputs.emplace_back(CAmount{0}, CScript{} << std::vector<uint8_t>(65535 - 11 - 3));
+    DataStream ss{};
+    ss << new_template;
+    // The length follows 8 + 1 + 4 + 4 + 1 + 4 + 8 + 4 bytes of fixed fields
+    BOOST_CHECK_EQUAL(HexStr(std::span{ss}.subspan(34, 2)), "ffff");
+    BOOST_CHECK_EQUAL(ss.size(), 34 + 2 + 65535 + 4 + 1);
+
+    new_template.m_coinbase_tx_outputs[0].scriptPubKey << OP_NOP;
+    BOOST_CHECK_THROW(DataStream{} << new_template, std::ios_base::failure);
+
+    // Same for excess_data in RequestTransactionData.Success
+    ss.clear();
+    ss << node::Sv2RequestTransactionDataSuccessMsg{1, std::vector<uint8_t>(65535), {}};
+    BOOST_CHECK_EQUAL(HexStr(std::span{ss}.subspan(8, 2)), "ffff");
+    BOOST_CHECK_EQUAL(ss.size(), 8 + 2 + 65535 + 2);
+
+    const node::Sv2RequestTransactionDataSuccessMsg too_long{1, std::vector<uint8_t>(65536), {}};
+    BOOST_CHECK_THROW(DataStream{} << too_long, std::ios_base::failure);
+}
+
+BOOST_AUTO_TEST_CASE(Sv2RequestTransactionDataSuccess_test)
+{
+    CMutableTransaction mtx;
+    mtx.vin.resize(1);
+    mtx.vin[0].scriptWitness.stack.emplace_back(0x0102, uint8_t{0x42}); // makes the length need two bytes
+    mtx.vout.emplace_back(CAmount{1}, CScript{} << OP_TRUE);
+    const CTransactionRef tx{MakeTransactionRef(mtx)};
+    DataStream tx_stream{};
+    tx_stream << TX_WITH_WITNESS(*tx);
+    BOOST_REQUIRE_EQUAL(tx_stream.size(), 0x0145);
+
+    DataStream ss{};
+    ss << node::Sv2RequestTransactionDataSuccessMsg{7, {0xaa, 0xbb}, {tx, tx}};
+
+    // U64               0700000000000000  template_id
+    // B0_64K            0200 aabb         excess_data
+    // SEQ0_64K[B0_16M]  0200              transaction count
+    //                   450100 ...        first transaction
+    //                   450100 ...        second transaction
+    const std::string tx_hex{"450100" + HexStr(tx_stream)};
+    BOOST_CHECK_EQUAL(HexStr(ss), "0700000000000000" "0200aabb" "0200" + tx_hex + tx_hex);
+}
+
+BOOST_AUTO_TEST_CASE(Sv2Bytes16M_test)
+{
+    // Round trip, with a length that needs all three bytes
+    {
+        std::vector<uint8_t> bytes(0x010203);
+        for (size_t i{0}; i < bytes.size(); ++i) bytes[i] = uint8_t(i);
+
+        DataStream ss{};
+        ss << Using<node::Sv2Bytes16MFormatter>(bytes);
+        BOOST_CHECK_EQUAL(ss.size(), 3 + bytes.size());
+        BOOST_CHECK_EQUAL(HexStr(std::span{ss}.first(5)), "0302010001");
+
+        std::vector<uint8_t> read;
+        ss >> Using<node::Sv2Bytes16MFormatter>(read);
+        BOOST_CHECK(read == bytes);
+        BOOST_CHECK(ss.empty());
+    }
+
+    // Empty
+    {
+        DataStream ss{};
+        ss << Using<node::Sv2Bytes16MFormatter>(std::vector<uint8_t>{});
+        BOOST_CHECK_EQUAL(HexStr(ss), "000000");
+
+        std::vector<uint8_t> read{0x01};
+        ss >> Using<node::Sv2Bytes16MFormatter>(read);
+        BOOST_CHECK(read.empty());
+        BOOST_CHECK(ss.empty());
+    }
+
+    // Largest length that fits
+    {
+        const std::vector<uint8_t> bytes(0xffffff, 0x42);
+        DataStream ss{};
+        ss << Using<node::Sv2Bytes16MFormatter>(bytes);
+        BOOST_CHECK_EQUAL(ss.size(), 3 + 0xffffff);
+        BOOST_CHECK_EQUAL(HexStr(std::span{ss}.first(3)), "ffffff");
+
+        std::vector<uint8_t> read;
+        ss >> Using<node::Sv2Bytes16MFormatter>(read);
+        BOOST_CHECK(read == bytes);
+        BOOST_CHECK(ss.empty());
+    }
+
+    // One more does not fit, and nothing is written
+    {
+        DataStream ss{};
+        BOOST_CHECK_THROW(ss << Using<node::Sv2Bytes16MFormatter>(std::vector<uint8_t>(0x1000000)), std::ios_base::failure);
+        BOOST_CHECK(ss.empty());
+    }
+
+    // Fewer bytes than the length announces
+    {
+        DataStream ss{};
+        ss << uint8_t{3} << uint8_t{0} << uint8_t{0} << uint8_t{0xaa} << uint8_t{0xbb};
+        std::vector<uint8_t> read;
+        BOOST_CHECK_THROW(ss >> Using<node::Sv2Bytes16MFormatter>(read), std::ios_base::failure);
+    }
 }
 BOOST_AUTO_TEST_SUITE_END()

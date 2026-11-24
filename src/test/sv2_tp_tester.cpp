@@ -331,8 +331,7 @@ void TPTester::SendSubmitSolutionCoinbase(uint64_t template_id, const CMutableTr
 
     DataStream ss{};
     ss << template_id << uint32_t{0x20000000} << uint32_t{0} << uint32_t{0}
-       << static_cast<uint16_t>(tx_stream.size());
-    ss.write(MakeByteSpan(tx_stream));
+       << Using<node::Sv2Bytes64KFormatter>(tx_stream);
     std::vector<uint8_t> bytes(ss.size());
     std::transform(ss.begin(), ss.end(), bytes.begin(), [](std::byte b) { return uint8_t(b); });
     node::Sv2NetMsg msg{node::Sv2MsgType::SUBMIT_SOLUTION, std::move(bytes)};

@@ -60,6 +60,55 @@ struct Sv2Bytes255Formatter
     }
 };
 
+/**
+ * Formatter for the B0_64K type: a two-byte little-endian length followed by
+ * that many bytes.
+ */
+struct Sv2Bytes64KFormatter
+{
+    template <typename Stream, typename V>
+    void Ser(Stream& s, const V& v)
+    {
+        if (v.size() > 65535) throw std::ios_base::failure("B0_64K length limit exceeded");
+        s << static_cast<uint16_t>(v.size());
+        if (!v.empty()) s.write(MakeByteSpan(v));
+    }
+
+    template <typename Stream, typename V>
+    void Unser(Stream& s, V& v)
+    {
+        uint16_t size;
+        s >> size;
+        v.resize(size);
+        if (size != 0) s.read(MakeWritableByteSpan(v));
+    }
+};
+
+/**
+ * Formatter for the B0_16M type: a three-byte little-endian length followed by
+ * that many bytes.
+ */
+struct Sv2Bytes16MFormatter
+{
+    template <typename Stream, typename V>
+    void Ser(Stream& s, const V& v)
+    {
+        if (v.size() > 0xffffff) throw std::ios_base::failure("B0_16M length limit exceeded");
+        const auto size{static_cast<uint32_t>(v.size())};
+        s << static_cast<uint8_t>(size) << static_cast<uint8_t>(size >> 8) << static_cast<uint8_t>(size >> 16);
+        if (!v.empty()) s.write(MakeByteSpan(v));
+    }
+
+    template <typename Stream, typename V>
+    void Unser(Stream& s, V& v)
+    {
+        u24_t size;
+        s >> size;
+        v.resize(size[0] | size[1] << 8 | size[2] << 16);
+        if (!v.empty()) s.read(MakeWritableByteSpan(v));
+    }
+};
+
 /** Formatter for the SEQ0_255 type: a one-byte element count followed by the elements. */
 struct Sv2Seq255Formatter
 {
@@ -370,25 +419,21 @@ struct Sv2NewTemplateMsg
           << m_coinbase_tx_value_remaining
           << m_coinbase_tx_outputs_count;
 
-        // If there are more than 0 coinbase tx outputs, then we need to serialize them
-        // as [B0_64K](https://github.com/stratum-mining/sv2-spec/blob/main/03-Protocol-Overview.md#31-data-types-mapping)
+        // The coinbase tx outputs are concatenated and serialized as a
+        // [B0_64K](https://github.com/stratum-mining/sv2-spec/blob/main/03-Protocol-Overview.md#31-data-types-mapping),
+        // which is empty if there are none.
+        std::vector<uint8_t> outputs_bytes;
         if (m_coinbase_tx_outputs_count > 0) {
-            std::vector<uint8_t> outputs_bytes;
             for (const auto& output : m_coinbase_tx_outputs) {
                 VectorWriter{outputs_bytes, outputs_bytes.size(), output};
             }
 
             LogPrintLevel(BCLog::SV2, BCLog::Level::Trace, "Serialized %zu coinbase output(s), total size: %zu bytes\n",
                           m_coinbase_tx_outputs.size(), outputs_bytes.size());
-
-            s << static_cast<uint16_t>(outputs_bytes.size());
-            s.write(MakeByteSpan(outputs_bytes));
-        } else {
-            // We will still need to send 2 bytes indicating an empty coinbase-tx_outputs array as a B0_64K.
-            s << static_cast<uint16_t>(0);
         }
 
-        s << m_coinbase_tx_locktime
+        s << Using<Sv2Bytes64KFormatter>(outputs_bytes)
+          << m_coinbase_tx_locktime
           << Using<Sv2Seq255Formatter>(m_merkle_path);
     }
 };
@@ -509,30 +554,15 @@ struct Sv2RequestTransactionDataSuccessMsg
     template <typename Stream>
     void Serialize(Stream& s) const
     {
-        s << m_template_id;
-
-        // excess data is expected to be serialized as a B0_64K type.
-        if (m_excess_data.empty()) {
-            s << static_cast<uint16_t>(0);
-        } else {
-            s << static_cast<uint16_t>(m_excess_data.size());
-            s.write(MakeByteSpan(m_excess_data));
-        }
+        s << m_template_id
+          << Using<Sv2Bytes64KFormatter>(m_excess_data);
 
         // transactions list is expected to be serialized as a SEQ0_64K[B0_16M].
         s << static_cast<uint16_t>(m_transactions_list.size());
         for (const auto& tx : m_transactions_list) {
             DataStream ss_tx{};
             ss_tx << TX_WITH_WITNESS(*tx);
-            auto tx_size = static_cast<uint32_t>(ss_tx.size());
-
-            u24_t tx_byte_len;
-            tx_byte_len[2] = (tx_size >> 16) & 0xff;
-            tx_byte_len[1] = (tx_size >> 8) & 0xff;
-            tx_byte_len[0] = tx_size & 0xff;
-
-            s << tx_byte_len;
-            s.write(MakeByteSpan(ss_tx));
+            s << Using<Sv2Bytes16MFormatter>(ss_tx);
         }
     };
 };
@@ -619,10 +649,12 @@ struct Sv2SubmitSolutionMsg
     {
         s >> m_template_id >> m_version >> m_ntime >> m_nonce;
 
-        // Ignore the 2 byte length as the rest of the stream is assumed to be
-        // the m_coinbase_tx.
-        s.ignore(2);
-        s >> TX_WITH_WITNESS(m_coinbase_tx);
+        // The coinbase transaction is a B0_64K, which it must fill exactly.
+        std::vector<uint8_t> coinbase_tx;
+        s >> Using<Sv2Bytes64KFormatter>(coinbase_tx);
+        SpanReader tx_reader{coinbase_tx};
+        tx_reader >> TX_WITH_WITNESS(m_coinbase_tx);
+        if (!tx_reader.empty()) throw std::ios_base::failure("coinbase_tx is shorter than its length");
     }
 };
 

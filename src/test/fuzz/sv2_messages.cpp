@@ -207,8 +207,7 @@ FUZZ_TARGET(sv2_submit_solution, .init = Sv2FuzzInitialize)
     // Fuzzed coinbase transaction bytes (with 2-byte length prefix)
     size_t tx_len = provider.ConsumeIntegralInRange<size_t>(0, 10000);
     auto tx_bytes = provider.ConsumeBytes<uint8_t>(tx_len);
-    ss << static_cast<uint16_t>(tx_bytes.size());
-    ss.write(MakeByteSpan(tx_bytes));
+    ss << Using<node::Sv2Bytes64KFormatter>(tx_bytes);
 
     try {
         Sv2SubmitSolutionMsg msg;

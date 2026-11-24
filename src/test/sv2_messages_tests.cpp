@@ -310,6 +310,21 @@ BOOST_AUTO_TEST_CASE(Sv2SubmitSolution_test)
     BOOST_CHECK_EQUAL(submit_solution.m_version, 2);
     BOOST_CHECK_EQUAL(submit_solution.m_ntime, 1661877399);
     BOOST_CHECK_EQUAL(submit_solution.m_nonce, 58720255);
+    BOOST_CHECK_EQUAL(submit_solution.m_coinbase_tx.vout.size(), 1);
+    BOOST_CHECK(ss.empty());
+
+    // The coinbase_tx length must match the transaction
+    constexpr size_t len_pos{8 + 4 + 4 + 4};
+    BOOST_REQUIRE_EQUAL(input[len_pos], sizeof(input) - len_pos - 2);
+    for (const int delta : {-1, 1}) {
+        std::vector<uint8_t> bad_len(std::begin(input), std::end(input));
+        bad_len[len_pos] += delta;
+        // Back the longer length with an extra byte, so that it is the
+        // transaction that falls short rather than the stream.
+        if (delta > 0) bad_len.push_back(0x00);
+        DataStream bad_ss{bad_len};
+        BOOST_CHECK_THROW(bad_ss >> submit_solution, std::ios_base::failure);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(Sv2SetupConnection_long_strings_test)

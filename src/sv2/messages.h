@@ -649,10 +649,12 @@ struct Sv2SubmitSolutionMsg
     {
         s >> m_template_id >> m_version >> m_ntime >> m_nonce;
 
-        // Ignore the 2 byte length as the rest of the stream is assumed to be
-        // the m_coinbase_tx.
-        s.ignore(2);
-        s >> TX_WITH_WITNESS(m_coinbase_tx);
+        // The coinbase transaction is a B0_64K, which it must fill exactly.
+        std::vector<uint8_t> coinbase_tx;
+        s >> Using<Sv2Bytes64KFormatter>(coinbase_tx);
+        SpanReader tx_reader{coinbase_tx};
+        tx_reader >> TX_WITH_WITNESS(m_coinbase_tx);
+        if (!tx_reader.empty()) throw std::ios_base::failure("coinbase_tx is shorter than its length");
     }
 };
 

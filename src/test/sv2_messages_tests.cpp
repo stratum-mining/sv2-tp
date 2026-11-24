@@ -365,4 +365,90 @@ BOOST_AUTO_TEST_CASE(Sv2_length_limit_test)
     BOOST_CHECK_EQUAL(ss.size(), 1 + 255 * 32);
     BOOST_CHECK_EQUAL(uint8_t(ss[0]), 255);
 }
+
+BOOST_AUTO_TEST_CASE(Sv2Bytes64K_test)
+{
+    // Round trip, with a length that needs both bytes
+    {
+        std::vector<uint8_t> bytes(0x0102);
+        for (size_t i{0}; i < bytes.size(); ++i) bytes[i] = uint8_t(i);
+
+        DataStream ss{};
+        ss << Using<node::Sv2Bytes64KFormatter>(bytes);
+        BOOST_CHECK_EQUAL(ss.size(), 2 + bytes.size());
+        BOOST_CHECK_EQUAL(HexStr(std::span{ss}.first(4)), "02010001");
+
+        std::vector<uint8_t> read;
+        ss >> Using<node::Sv2Bytes64KFormatter>(read);
+        BOOST_CHECK(read == bytes);
+        BOOST_CHECK(ss.empty());
+    }
+
+    // Empty
+    {
+        DataStream ss{};
+        ss << Using<node::Sv2Bytes64KFormatter>(std::vector<uint8_t>{});
+        BOOST_CHECK_EQUAL(HexStr(ss), "0000");
+
+        std::vector<uint8_t> read{0x01};
+        ss >> Using<node::Sv2Bytes64KFormatter>(read);
+        BOOST_CHECK(read.empty());
+        BOOST_CHECK(ss.empty());
+    }
+
+    // Largest length that fits
+    {
+        const std::string str(65535, 's');
+        DataStream ss{};
+        ss << Using<node::Sv2Bytes64KFormatter>(str);
+        BOOST_CHECK_EQUAL(ss.size(), 2 + 65535);
+        BOOST_CHECK_EQUAL(HexStr(std::span{ss}.first(2)), "ffff");
+
+        std::string read;
+        ss >> Using<node::Sv2Bytes64KFormatter>(read);
+        BOOST_CHECK(read == str);
+        BOOST_CHECK(ss.empty());
+    }
+
+    // One more does not fit, and nothing is written
+    {
+        DataStream ss{};
+        BOOST_CHECK_THROW(ss << Using<node::Sv2Bytes64KFormatter>(std::vector<uint8_t>(65536)), std::ios_base::failure);
+        BOOST_CHECK(ss.empty());
+    }
+
+    // Fewer bytes than the length announces
+    {
+        DataStream ss{};
+        ss << uint16_t{3} << uint8_t{0xaa} << uint8_t{0xbb};
+        std::vector<uint8_t> read;
+        BOOST_CHECK_THROW(ss >> Using<node::Sv2Bytes64KFormatter>(read), std::ios_base::failure);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(Sv2_B0_64K_message_limit_test)
+{
+    // 65535 bytes of coinbase outputs fit in NewTemplate, 65536 do not:
+    // 8 byte amount + 3 byte script length + script
+    node::Sv2NewTemplateMsg new_template{};
+    new_template.m_coinbase_tx_outputs_count = 1;
+    new_template.m_coinbase_tx_outputs.emplace_back(CAmount{0}, CScript{} << std::vector<uint8_t>(65535 - 11 - 3));
+    DataStream ss{};
+    ss << new_template;
+    // The length follows 8 + 1 + 4 + 4 + 1 + 4 + 8 + 4 bytes of fixed fields
+    BOOST_CHECK_EQUAL(HexStr(std::span{ss}.subspan(34, 2)), "ffff");
+    BOOST_CHECK_EQUAL(ss.size(), 34 + 2 + 65535 + 4 + 1);
+
+    new_template.m_coinbase_tx_outputs[0].scriptPubKey << OP_NOP;
+    BOOST_CHECK_THROW(DataStream{} << new_template, std::ios_base::failure);
+
+    // Same for excess_data in RequestTransactionData.Success
+    ss.clear();
+    ss << node::Sv2RequestTransactionDataSuccessMsg{1, std::vector<uint8_t>(65535), {}};
+    BOOST_CHECK_EQUAL(HexStr(std::span{ss}.subspan(8, 2)), "ffff");
+    BOOST_CHECK_EQUAL(ss.size(), 8 + 2 + 65535 + 2);
+
+    const node::Sv2RequestTransactionDataSuccessMsg too_long{1, std::vector<uint8_t>(65536), {}};
+    BOOST_CHECK_THROW(DataStream{} << too_long, std::ios_base::failure);
+}
 BOOST_AUTO_TEST_SUITE_END()

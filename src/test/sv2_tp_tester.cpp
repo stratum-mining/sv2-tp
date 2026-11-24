@@ -142,7 +142,8 @@ TPTester::TPTester(Sv2TemplateProviderOptions opts, MockNodeVersion version)
     BOOST_REQUIRE(m_client_init != nullptr);
     m_mining_proxy = m_client_init->makeMining();
     BOOST_REQUIRE(m_mining_proxy != nullptr);
-    if (version != MockNodeVersion::CURRENT) {
+    // A v32 node has every method of the interface, so it needs no wrapper.
+    if (version != MockNodeVersion::V32) {
         m_mining_proxy = std::make_unique<OldNodeMining>(std::move(m_mining_proxy), version);
     }
 

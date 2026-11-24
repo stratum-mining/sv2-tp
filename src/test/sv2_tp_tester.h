@@ -31,9 +31,11 @@ struct MockInit;
 //! it does not have throw, like they do when the IPC layer finds that the
 //! other side does not implement them.
 enum class MockNodeVersion : uint8_t {
-    //! Has submitBlock(), the getTransactionsBy*() lookups and
-    //! submitSolution() with reason and debug.
-    CURRENT,
+    //! Newer than the latest Bitcoin Core release.
+    // CURRENT,
+    //! Bitcoin Core v32: has submitBlock(), the getTransactionsBy*() lookups
+    //! and submitSolution() with reason and debug.
+    V32,
     //! Bitcoin Core v31: has none of these.
     V31,
 };
@@ -68,7 +70,7 @@ public:
 
     TPTester();
     /** @param[in] version Mining interface version of the simulated node */
-    explicit TPTester(Sv2TemplateProviderOptions opts, MockNodeVersion version = MockNodeVersion::CURRENT);
+    explicit TPTester(Sv2TemplateProviderOptions opts, MockNodeVersion version = MockNodeVersion::V32);
     ~TPTester();
 
     void SendPeerBytes(size_t peer_id = 0);

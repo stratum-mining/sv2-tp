@@ -31,9 +31,10 @@ struct MockInit;
 //! it does not have throw, like they do when the IPC layer finds that the
 //! other side does not implement them.
 enum class MockNodeVersion : uint8_t {
-    //! Has getTransactionsByTxID() and submitSolution() with reason and debug.
+    //! Has submitBlock(), the getTransactionsBy*() lookups and
+    //! submitSolution() with reason and debug.
     CURRENT,
-    //! Bitcoin Core v31: has neither.
+    //! Bitcoin Core v31: has none of these.
     V31,
 };
 
@@ -78,8 +79,8 @@ public:
     Sv2NetMsg SetupConnectionMsg();
     size_t GetBlockTemplateCount();
 
-    /** Send SetupConnection and verify Success reply. */
-    void SendSetupConnection(size_t peer_id = 0);
+    /** Send SetupConnection with flags and verify that Success echoes them. */
+    void SendSetupConnection(size_t peer_id = 0, uint32_t flags = 0);
     /** Send CoinbaseOutputConstraints message. */
     void SendCoinbaseOutputConstraints(size_t peer_id = 0, uint32_t max_additional_size = 1);
     /** Send SubmitSolution for template_id with the given coinbase. */

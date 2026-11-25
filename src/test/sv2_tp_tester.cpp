@@ -223,6 +223,7 @@ TPTester::TPTester(Sv2TemplateProviderOptions opts, MockNodeVersion version)
 
     // Construct Template Provider with the IPC-backed Mining proxy
     m_tp = std::make_unique<Sv2TemplateProvider>(*m_mining_proxy);
+    m_state->tp_mutex = &m_tp->m_tp_mutex;
 
     CreateSock = [this](int, int, int) -> std::unique_ptr<Sock> {
         // This will be the bind/listen socket from m_tp. It will

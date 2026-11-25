@@ -332,8 +332,9 @@ void Sv2TemplateProvider::ThreadSv2Handler()
         // Take a break (handling new connections is not urgent)
         std::this_thread::sleep_for(100ms);
 
-        LOCK(m_tp_mutex);
-        PruneBlockTemplateCache();
+        // Release pruned templates after unlocking m_tp_mutex: destroying a
+        // template waits for the node to reply.
+        const BlockTemplateCache pruned{WITH_LOCK(m_tp_mutex, return PruneBlockTemplateCache())};
     }
 
     for (auto& entry : client_threads) {
@@ -774,21 +775,23 @@ void Sv2TemplateProvider::SaveBlockAsync(std::shared_ptr<BlockTemplate> block_te
     }).detach();
 }
 
-void Sv2TemplateProvider::PruneBlockTemplateCache()
+Sv2TemplateProvider::BlockTemplateCache Sv2TemplateProvider::PruneBlockTemplateCache()
 {
     AssertLockHeld(m_tp_mutex);
 
+    BlockTemplateCache pruned;
     auto recent = GetTime<std::chrono::seconds>() - std::chrono::seconds(STALE_TEMPLATE_GRACE_PERIOD);
-    if (m_last_block_time > recent) return;
+    if (m_last_block_time > recent) return pruned;
     // If the blocks prevout is not the tip's prevout, delete it.
-    uint256 prev_hash = m_best_prev_hash;
-    std::erase_if(m_block_template_cache, [prev_hash] (const auto& kv) {
-        if (kv.second.first != prev_hash) {
-            LogTrace(BCLog::SV2, "Prune stale template id=%lu (%zus after new tip)", kv.first, STALE_TEMPLATE_GRACE_PERIOD);
-            return true;
+    for (auto it{m_block_template_cache.begin()}; it != m_block_template_cache.end();) {
+        auto next{std::next(it)};
+        if (it->second.first != m_best_prev_hash) {
+            LogTrace(BCLog::SV2, "Prune stale template id=%lu (%zus after new tip)", it->first, STALE_TEMPLATE_GRACE_PERIOD);
+            pruned.insert(m_block_template_cache.extract(it));
         }
-        return false;
-    });
+        it = next;
+    }
+    return pruned;
 }
 
 std::unique_ptr<interfaces::Block> Sv2TemplateProvider::TemplateBlock(BlockTemplate& block_template)

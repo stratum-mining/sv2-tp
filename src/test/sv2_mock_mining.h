@@ -63,6 +63,13 @@ struct MockState {
     std::atomic<int> template_merkle_path_calls{0};
     //! Number of Block handles that have not been destroyed.
     std::atomic<int> blocks_alive{0};
+    //! Template provider mutex that must not be held while templates are
+    //! destroyed, because their destruction waits for an IPC reply.
+    std::atomic<Mutex*> tp_mutex{nullptr};
+    //! Number of destroyed templates, and how many of those were destroyed
+    //! while tp_mutex was held.
+    std::atomic<int> templates_destroyed{0};
+    std::atomic<int> templates_destroyed_under_tp_mutex{0};
     //! When non-zero, createNewBlock() throws if block_reserved_weight exceeds
     //! it, like Bitcoin Core v32 does for a node's -blockmaxweight.
     uint64_t max_reserved_weight GUARDED_BY(m){0};
@@ -103,6 +110,7 @@ private:
 class MockBlockTemplate : public interfaces::BlockTemplate {
 public:
     explicit MockBlockTemplate(std::shared_ptr<MockState> st, uint256 prev, std::vector<CTransactionRef> txs, uint64_t seq, CAmount total_fees);
+    ~MockBlockTemplate() override;
 
     // Accessor for tests (future use). Keeps sequence from being flagged unused.
     uint64_t sequence() const { return m_sequence; }

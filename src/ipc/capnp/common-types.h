@@ -7,10 +7,12 @@
 
 #include <clientversion.h>
 #include <interfaces/types.h>
+#include <ipc/serialized.h>
 #include <primitives/transaction.h>
 #include <serialize.h>
 #include <streams.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <mp/proxy-types.h>
 #include <mp/type-chrono.h>
@@ -54,6 +56,24 @@ concept Deserializable = std::is_constructible_v<T, ::deserialize_type, ::DataSt
 
 //! Functions to serialize / deserialize common bitcoin types.
 namespace mp {
+//! Copy an already serialized payload without constructing the underlying T.
+template <typename T, typename Value, typename Output>
+void CustomBuildField(TypeList<ipc::Serialized<T>>, Priority<1>, InvokeContext& invoke_context, Value&& value, Output&& output)
+{
+    auto result = output.init(value.bytes.size());
+    std::copy(value.bytes.begin(), value.bytes.end(), result.begin());
+}
+
+template <typename T, typename Input, typename ReadDest>
+decltype(auto) CustomReadField(TypeList<ipc::Serialized<T>>, Priority<1>, InvokeContext& invoke_context, Input&& input, ReadDest&& read_dest)
+{
+    return read_dest.update([&](auto& value) {
+        if (!input.has()) return;
+        const auto data = input.get();
+        value.bytes.assign(data.begin(), data.end());
+    });
+}
+
 //! Overload multiprocess library's CustomBuildField hook to allow any
 //! serializable object to be stored in a capnproto Data field or passed to a
 //! capnproto interface. Use Priority<1> so this hook has medium priority, and

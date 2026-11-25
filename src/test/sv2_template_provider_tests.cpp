@@ -234,9 +234,13 @@ BOOST_AUTO_TEST_CASE(client_tests)
     // TODO
 
     BOOST_TEST_MESSAGE("Until after some time");
+    const int templates_destroyed{tester.m_state->templates_destroyed};
     SetMockTime(GetMockTime() + std::chrono::seconds{15});
     UninterruptibleSleep(std::chrono::milliseconds{1100});
     BOOST_REQUIRE_EQUAL(tester.GetBlockTemplateCount(), 1);
+    // Pruning destroyed the stale templates, without holding m_tp_mutex.
+    BOOST_CHECK_EQUAL(tester.m_state->templates_destroyed.load(), templates_destroyed + 3);
+    BOOST_CHECK_EQUAL(tester.m_state->templates_destroyed_under_tp_mutex.load(), 0);
 
     tester.receiveMessage(request_transaction_data_msg);
     // RequestTransactionData.Error (just check that the size is different)

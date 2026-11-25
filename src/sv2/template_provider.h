@@ -11,6 +11,7 @@
 #include <util/time.h>
 #include <streams.h>
 #include <memory>
+#include <mutex>
 
 using interfaces::BlockTemplate;
 
@@ -27,6 +28,8 @@ class CBlock;
 inline constexpr int NODE_VERSION_31_0{310000};
 //! Bitcoin Core v32.0 mining interface. The node may be newer.
 inline constexpr int NODE_VERSION_32_00{320000};
+//! Mining interface with BlockTemplate::block(), which is not released yet.
+inline constexpr int NODE_VERSION_33_00{330000};
 
 struct Sv2TemplateProviderOptions
 {
@@ -119,8 +122,9 @@ private:
      * Version of the node we're connected to, as far as its mining interface
      * lets us tell versions apart.
      *
-     * Determined by DetectNodeVersion() when the template provider starts, so
-     * that time critical calls don't need a round trip to find out.
+     * Determined by DetectNodeVersion() when the template provider starts,
+     * and by DetectTemplateInterface() for the first template, so that time
+     * critical calls don't need a round trip to find out.
      */
     std::atomic<int> m_node_version{NODE_VERSION_31_0};
 
@@ -129,6 +133,15 @@ private:
      * Core v31 does not have.
      */
     void DetectNodeVersion();
+
+    std::once_flag m_template_interface_detected;
+
+    /**
+     * Raise m_node_version to NODE_VERSION_33_00 if the node has
+     * BlockTemplate::block(). Only templates can tell, so this runs once,
+     * for the first template, before it is sent to a client.
+     */
+    void DetectTemplateInterface(BlockTemplate& block_template);
 
     /**
      * A cache that maps ids used in NewTemplate messages and its associated
@@ -224,11 +237,19 @@ private:
     /* Forget templates from before the last block, but with a few seconds margin. */
     void PruneBlockTemplateCache() EXCLUSIVE_LOCKS_REQUIRED(m_tp_mutex);
 
-    /** Serialize and write a block to disk asynchronously after a short delay, using the provided template. */
-    void SaveBlockAsync(std::shared_ptr<BlockTemplate> block_template, bool submitted);
+    /**
+     * Serialize and write a block to disk asynchronously after a short delay.
+     * Use the block handle returned by submitSolution() if there is one,
+     * otherwise the template, which older nodes modify in place.
+     */
+    void SaveBlockAsync(std::shared_ptr<BlockTemplate> block_template, std::unique_ptr<interfaces::Block> block_handle, bool submitted);
 
     /**
      * Sends the best NewTemplate and SetNewPrevHash to a client.
+     *
+     * @param[in] block   handle to the template block on nodes that have the
+     *                    Block interface, see TemplateBlock(), otherwise nullptr
+     * @param[in] header  header of the template block
      *
      * The current implementation doesn't create templates for future empty
      * or speculative blocks. Despite that, we first send NewTemplate with
@@ -238,7 +259,14 @@ private:
      * When the template is update to take newer mempool transactions into
      * account, we set future_template to false and don't send SetNewPrevHash.
      */
-    [[nodiscard]] bool SendWork(Sv2Client& client, uint64_t template_id, BlockTemplate& block_template, bool future_template);
+    [[nodiscard]] bool SendWork(Sv2Client& client, uint64_t template_id, BlockTemplate& block_template, interfaces::Block* block, const CBlockHeader& header, bool future_template);
+
+    /**
+     * Handle to the block of a template, used for its header, coinbase fields
+     * and merkle path. Returns nullptr for older nodes, which have these on
+     * BlockTemplate. Callers release it after sending the template.
+     */
+    std::unique_ptr<interfaces::Block> TemplateBlock(BlockTemplate& block_template);
 
 };
 

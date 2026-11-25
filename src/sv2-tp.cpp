@@ -26,6 +26,7 @@
 #include <util/syserror.h>
 #include <util/translation.h>
 
+#include <atomic>
 #include <cerrno>
 #include <cstdlib>
 #ifndef WIN32
@@ -130,7 +131,10 @@ static void AddArgs(ArgsManager& args)
     init::AddLoggingArgs(args);
 }
 
-static bool g_interrupt{false};
+static std::atomic<bool> g_interrupt{false};
+//! Set while connecting to the node, where g_interrupt isn't checked.
+static std::atomic<bool> g_ipc_blocking{false};
+static_assert(std::atomic<bool>::is_always_lock_free);
 namespace {
 constexpr auto IPC_RECONNECT_INITIAL_DELAY{std::chrono::seconds{1}};
 constexpr auto IPC_RECONNECT_MAX_DELAY{std::chrono::seconds{32}};
@@ -146,9 +150,13 @@ static void registerSignalHandler(int signal, void(*handler)(int))
     sa.sa_flags = 0;
     sigaction(signal, &sa, nullptr);
 }
-static void HandleSIGTERM(int)
+static void HandleSIGTERM(int signal)
 {
     g_interrupt = true;
+    if (g_ipc_blocking) {
+        registerSignalHandler(signal, SIG_DFL);
+        raise(signal);
+    }
 }
 
 #endif
@@ -263,6 +271,12 @@ MAIN_FUNCTION
         options.template_interval = std::chrono::seconds(args.GetIntArg("-templateinterval", 0));
     }
 
+    // Register before connecting, so a signal ends the retry loop below.
+#ifndef WIN32
+    registerSignalHandler(SIGTERM, HandleSIGTERM);
+    registerSignalHandler(SIGINT, HandleSIGTERM);
+#endif
+
     // Connect to bitcoin-node via IPC
     //
     // If the node is not available, keep retrying in a loop.
@@ -285,7 +299,9 @@ MAIN_FUNCTION
 
     const auto connect_to_node = [&]() -> std::pair<std::unique_ptr<interfaces::Init>, std::unique_ptr<interfaces::Mining>> {
         auto retry_delay = IPC_RECONNECT_INITIAL_DELAY;
-        while (!g_interrupt) {
+        while (true) {
+            g_ipc_blocking = true;
+            if (g_interrupt) break;
             try {
                 std::unique_ptr<interfaces::Init> node_init = mine_init->ipc()->connectAddress(address);
                 if (!node_init) {
@@ -295,9 +311,11 @@ MAIN_FUNCTION
                 if (!mining) {
                     throw std::runtime_error("IPC connection returned no mining interface");
                 }
+                g_ipc_blocking = false;
                 LogPrintf("Connected to bitcoin-node via IPC at: %s\n", address);
                 return {std::move(node_init), std::move(mining)};
             } catch (const std::exception& exception) {
+                g_ipc_blocking = false;
                 LogPrintf("IPC connection failed: %s\n", exception.what());
                 LogPrintf("Retrying in %d seconds... (Ensure Bitcoin Core is running with '-ipcbind=unix')\n",
                           retry_delay.count());
@@ -309,6 +327,7 @@ MAIN_FUNCTION
                 retry_delay = std::min(retry_delay * 2, IPC_RECONNECT_MAX_DELAY);
             }
         }
+        g_ipc_blocking = false;
         return {};
     };
 
@@ -328,11 +347,6 @@ MAIN_FUNCTION
 
     LogPrintf("sv2-tp listening for Stratum v2 connections on %s:%d\n",
               options.host, options.port);
-
-#ifndef WIN32
-    registerSignalHandler(SIGTERM, HandleSIGTERM);
-    registerSignalHandler(SIGINT, HandleSIGTERM);
-#endif
 
     // Probe the mining IPC connection even when no SV2 clients are connected,
     // so a backend disconnect triggers shutdown.

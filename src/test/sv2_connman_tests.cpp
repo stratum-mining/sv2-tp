@@ -139,10 +139,10 @@ BOOST_AUTO_TEST_CASE(client_tests)
     BOOST_REQUIRE_EQUAL(required_flags, 0);
     BOOST_REQUIRE(tester.IsFullyConnected());
 
-    std::vector<uint8_t> coinbase_output_max_additional_size_bytes{
-        0x01, 0x00, 0x00, 0x00
+    std::vector<uint8_t> coinbase_output_constraints_bytes{
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00
     };
-    node::Sv2NetMsg msg{node::Sv2MsgType::COINBASE_OUTPUT_CONSTRAINTS, std::move(coinbase_output_max_additional_size_bytes)};
+    node::Sv2NetMsg msg{node::Sv2MsgType::COINBASE_OUTPUT_CONSTRAINTS, std::move(coinbase_output_constraints_bytes)};
     // No reply expected, not yet implemented
     tester.RemoteToLocalMsg(msg);
 }
@@ -179,10 +179,10 @@ BOOST_AUTO_TEST_CASE(submit_solution_forwarded)
     BOOST_REQUIRE(tester.IsConnected());
     BOOST_REQUIRE(logs.WaitFor("Received SubmitSolution before SetupConnection and CoinbaseOutputConstraints (setup_connection=1, coinbase_output_constraints=0)"));
 
-    std::vector<uint8_t> coinbase_output_max_additional_size_bytes{
-        0x01, 0x00, 0x00, 0x00
+    std::vector<uint8_t> coinbase_output_constraints_bytes{
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00
     };
-    node::Sv2NetMsg constraints{node::Sv2MsgType::COINBASE_OUTPUT_CONSTRAINTS, std::move(coinbase_output_max_additional_size_bytes)};
+    node::Sv2NetMsg constraints{node::Sv2MsgType::COINBASE_OUTPUT_CONSTRAINTS, std::move(coinbase_output_constraints_bytes)};
     tester.RemoteToLocalMsg(constraints);
 
     node::Sv2NetMsg solution{TestSubmitSolutionMsg()};
@@ -220,7 +220,7 @@ BOOST_AUTO_TEST_CASE(submit_solution_after_premature_request_transaction_data)
     BOOST_REQUIRE(logs.WaitFor("Received RequestTransactionData before SetupConnection and CoinbaseOutputConstraints (setup_connection=1, coinbase_output_constraints=0)"));
 
     // Completing setup lets the client retry on the same connection.
-    std::vector<uint8_t> constraints_bytes{0x01, 0x00, 0x00, 0x00};
+    std::vector<uint8_t> constraints_bytes{0x01, 0x00, 0x00, 0x00, 0x00, 0x00};
     node::Sv2NetMsg constraints{node::Sv2MsgType::COINBASE_OUTPUT_CONSTRAINTS, std::move(constraints_bytes)};
     tester.RemoteToLocalMsg(constraints);
     node::Sv2NetMsg retry{node::Sv2MsgType::REQUEST_TRANSACTION_DATA, {0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
@@ -393,16 +393,16 @@ BOOST_AUTO_TEST_CASE(coinbase_output_constraints_set_after_validation)
     BOOST_CHECK_EQUAL(accepted.m_coinbase_constraints_generation.load(), 1U);
 
     // The sigops field was added to the spec in March 2025. An older client,
-    // such as SRI before v1.3.0, sends only the size. The message is still
-    // accepted and the default of 400 sigops is used.
+    // such as SRI before v1.3.0, sends only the size. It is disconnected and
+    // its previous constraints are kept.
     node::Sv2NetMsg without_sigops{node::Sv2MsgType::COINBASE_OUTPUT_CONSTRAINTS, {0x01, 0x00, 0x00, 0x00}};
     tester.m_connman->ProcessSv2Message(without_sigops, accepted);
     {
         LOCK(accepted.cs_status);
-        BOOST_CHECK(!accepted.m_disconnect_flag);
-        BOOST_CHECK_EQUAL(accepted.m_coinbase_tx_outputs_sigops, 400U);
+        BOOST_CHECK(accepted.m_disconnect_flag);
+        BOOST_CHECK_EQUAL(accepted.m_coinbase_tx_outputs_sigops, 258U);
     }
-    BOOST_CHECK_EQUAL(accepted.m_coinbase_constraints_generation.load(), 2U);
+    BOOST_CHECK_EQUAL(accepted.m_coinbase_constraints_generation.load(), 1U);
 }
 
 // A client whose socket send fails must be removed.

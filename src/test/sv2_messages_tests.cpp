@@ -312,6 +312,41 @@ BOOST_AUTO_TEST_CASE(Sv2SubmitSolution_test)
     BOOST_CHECK_EQUAL(submit_solution.m_nonce, 58720255);
 }
 
+BOOST_AUTO_TEST_CASE(Sv2CoinbaseOutputConstraints_test)
+{
+    {
+        // Both fields present
+        uint8_t input[]{
+            0xa0, 0x0f, 0x00, 0x00, // coinbase_output_max_additional_size
+            0xe8, 0x03,             // coinbase_output_max_additional_sigops
+        };
+        DataStream ss(input);
+        node::Sv2CoinbaseOutputConstraintsMsg msg;
+        ss >> msg;
+        BOOST_CHECK_EQUAL(msg.m_coinbase_output_max_additional_size, 4000);
+        BOOST_CHECK_EQUAL(msg.m_coinbase_output_max_additional_sigops, 1000);
+    }
+    {
+        // Clients from before the sigops field was added omit it
+        uint8_t input[]{
+            0xa0, 0x0f, 0x00, 0x00, // coinbase_output_max_additional_size
+        };
+        DataStream ss(input);
+        node::Sv2CoinbaseOutputConstraintsMsg msg;
+        BOOST_CHECK_THROW(ss >> msg, std::ios_base::failure);
+    }
+    {
+        // A truncated sigops field
+        uint8_t input[]{
+            0x01, 0x00, 0x00, 0x00, // coinbase_output_max_additional_size
+            0xff,                   // one byte of coinbase_output_max_additional_sigops
+        };
+        DataStream ss(input);
+        node::Sv2CoinbaseOutputConstraintsMsg msg;
+        BOOST_CHECK_THROW(ss >> msg, std::ios_base::failure);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(Sv2SetupConnection_long_strings_test)
 {
     for (const size_t len : {252, 253, 254, 255}) {

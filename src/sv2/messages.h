@@ -209,15 +209,10 @@ struct Sv2CoinbaseOutputConstraintsMsg
     template <typename Stream>
     void Unserialize(Stream& s)
     {
-        s >> m_coinbase_output_max_additional_size;
-       try {
-            // This field was added to the spec in March 2025.
-            // SRI roles before v1.3.0 do not provide it.
-            s >> m_coinbase_output_max_additional_sigops;
-        } catch (...) {
-            // Just use the default if it's missing
-            m_coinbase_output_max_additional_sigops = 400;
-        }
+        // The sigops field was added to the spec in March 2025 and is
+        // required. SRI added it in v1.3.0, but counts too few sigops
+        // before v1.5.0.
+        s >> m_coinbase_output_max_additional_size >> m_coinbase_output_max_additional_sigops;
     }
 };
 

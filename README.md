@@ -57,6 +57,11 @@ that client with the authority public key printed in the
 [keys and certificates](doc/stratum-v2.md#keys-and-certificates) for details
 on how `sv2-tp` generates and stores its keys and its current limitations.
 
+When using the Stratum Reference Implementation (SRI), use v1.5.0 or later
+(any [sv2-apps](https://github.com/stratum-mining/sv2-apps) release works).
+Earlier versions announce too few coinbase sigops, or none, in
+`CoinbaseOutputConstraints`.
+
 See https://github.com/stratum-mining/stratum.
 
 Configuration

@@ -132,8 +132,8 @@ FUZZ_TARGET(sv2_setup_connection, .init = Sv2FuzzInitialize)
 }
 
 // Fuzz Sv2CoinbaseOutputConstraintsMsg deserialization (client -> TP message).
-// We construct a well-formed stream; the Unserialize method internally handles
-// the optional sigops field with its own catch, so no outer catch is needed.
+// We construct a stream with or without the required sigops field. Without it,
+// deserialization must fail.
 FUZZ_TARGET(sv2_coinbase_output_constraints, .init = Sv2FuzzInitialize)
 {
     const CheckGlobals check_globals{};
@@ -151,15 +151,18 @@ FUZZ_TARGET(sv2_coinbase_output_constraints, .init = Sv2FuzzInitialize)
     }
 
     Sv2CoinbaseOutputConstraintsMsg msg;
+    if (!include_sigops) {
+        try {
+            ss >> msg;
+            assert(false);
+        } catch (const std::ios_base::failure&) {
+        }
+        return;
+    }
     ss >> msg;
 
     assert(msg.m_coinbase_output_max_additional_size == max_additional_size);
-    if (include_sigops) {
-        assert(msg.m_coinbase_output_max_additional_sigops == sigops);
-    } else {
-        // Unserialize defaults to 400 when sigops field is absent
-        assert(msg.m_coinbase_output_max_additional_sigops == 400);
-    }
+    assert(msg.m_coinbase_output_max_additional_sigops == sigops);
 
     // Roundtrip: serialize then deserialize again and compare
     DataStream ss_rt{};

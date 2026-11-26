@@ -538,6 +538,28 @@ BOOST_AUTO_TEST_CASE(coinbase_constraints_that_fit_in_a_block)
     tester.m_mining_control->Shutdown();
 }
 
+// The sigops that a client announces for its coinbase outputs are reserved in
+// its templates. An update that only changes the sigops rebuilds the template.
+BOOST_AUTO_TEST_CASE(coinbase_output_sigops_reserved)
+{
+    TPTester tester{};
+    tester.handshake();
+    tester.SendSetupConnection();
+    tester.SendCoinbaseOutputConstraints(/*peer_id=*/0, /*max_additional_size=*/1, /*max_additional_sigops=*/1'000);
+    tester.ReceiveTemplatePair();
+    BOOST_REQUIRE(tester.m_mining_control->WaitForWaitNext(1));
+
+    // The largest value that the message can hold still fits in a block.
+    tester.SendCoinbaseOutputConstraints(/*peer_id=*/0, /*max_additional_size=*/1, /*max_additional_sigops=*/65'535);
+    tester.ReceiveTemplatePair();
+    BOOST_CHECK_EQUAL(tester.m_tp->ConnectedClientCount(), 1U);
+    const auto sigops{tester.m_mining_control->GetCreateSigops()};
+    BOOST_REQUIRE_EQUAL(sigops.size(), 2U);
+    BOOST_CHECK_EQUAL(sigops.front(), 1'000U);
+    BOOST_CHECK_EQUAL(sigops.back(), 65'535U);
+    tester.m_mining_control->Shutdown();
+}
+
 // A client whose CoinbaseOutputConstraints are rejected is disconnected
 // without a template ever being built for it. One byte more than above needs
 // more weight than fits in a block, which Bitcoin Core v32 rejects.

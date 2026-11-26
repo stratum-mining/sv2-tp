@@ -62,6 +62,13 @@ struct Sv2Client
     unsigned int m_coinbase_tx_outputs_size GUARDED_BY(cs_status){0};
 
     /**
+     * Specific additional coinbase tx output sigops required for the client.
+     * Counted like the block limit of 80,000 (BIP141), so a legacy sigop
+     * counts as four.
+     */
+    uint16_t m_coinbase_tx_outputs_sigops GUARDED_BY(cs_status){0};
+
+    /**
      * Tracks the best template in the Template Provider m_block_template_cache map.
      * Not guaranteed to still exist.
     */
